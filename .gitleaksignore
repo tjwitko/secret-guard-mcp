@@ -1,0 +1,9 @@
+# Documentation examples and test constants in the repo whose whole job is finding these.
+# Fingerprints, not blanket path excludes: a NEW secret in these same files still fails.
+/Users/tomwitkowski/LLM/secret-guard-mcp/README.md:connection-string-password:40
+/Users/tomwitkowski/LLM/secret-guard-mcp/CLAUDE.md:connection-string-password:59
+/Users/tomwitkowski/LLM/secret-guard-mcp/CLAUDE.md:aws-access-token:52
+/Users/tomwitkowski/LLM/secret-guard-mcp/test/gitleaks.test.mjs:stripe-access-token:18
+/Users/tomwitkowski/LLM/secret-guard-mcp/test/gitleaks.test.mjs:aws-access-token:19
+/Users/tomwitkowski/LLM/secret-guard-mcp/test/gitleaks.test.mjs:connection-string-password:20
+/Users/tomwitkowski/LLM/secret-guard-mcp/test/gitleaks.test.mjs:slack-bot-token:114
