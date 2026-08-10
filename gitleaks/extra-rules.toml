@@ -1,0 +1,29 @@
+title = "secret-guard-mcp"
+
+# Keep every one of gitleaks' ~170 built-in rules and add to them. Without this, defining any
+# rule here would REPLACE the default set rather than extend it -- a config that looks like it
+# tightened the scan while actually gutting it.
+[extend]
+useDefault = true
+
+# Verified gap, not a speculative addition: gitleaks 8.30.1 with default rules does not flag
+#   database_url: REDACTED_DSN_TEST_FIXTURE
+# in a YAML file. A password inside a DSN is one of the most common ways a real credential ends
+# up in a config file, so this closes it.
+#
+# secretGroup = 1 reports only the password, not the whole URI -- otherwise the host and username
+# would be redacted along with it and the finding would be unreadable.
+[[rules]]
+id = "connection-string-password"
+description = "Credential embedded in a connection string or URI (scheme://user:PASSWORD@host)"
+regex = '''[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\/\s:@]{1,64}:([^\/\s:@]{4,128})@[^\/\s:@]+'''
+secretGroup = 1
+keywords = ["://"]
+
+  [rules.allowlist]
+  # Placeholders in documentation and templates, not credentials. Without these, every README
+  # showing a connection-string format becomes a finding, and a scanner that fires on
+  # documentation is one people turn off.
+  regexes = [
+    '''(?i)^(password|pass|passwd|pwd|secret|changeme|example|placeholder|your[_-]?password|xxx+|\*+|<[^>]+>|\$\{[^}]+\}|%[^%]+%)$''',
+  ]

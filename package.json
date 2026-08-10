@@ -1,0 +1,16 @@
+{
+  "name": "secret-guard-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server exposing scan_path and scan_content tools backed by gitleaks, for keeping credentials out of source and configuration files in any language or format.",
+  "main": "index.mjs",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^4.4.3"
+  },
+  "license": "ISC",
+  "scripts": {
+    "test": "node --test"
+  }
+}
