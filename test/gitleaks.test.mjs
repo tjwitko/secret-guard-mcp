@@ -8,9 +8,11 @@ import { resolveScanPath } from "../lib/paths.mjs";
 import {
   checkGitleaksInstalled,
   normalizeFindings,
+  readSuppressions,
   scanContent,
   scanPath,
   summarize,
+  SUPPRESSION_FILES,
 } from "../lib/gitleaks.mjs";
 
 // Test material. These are published documentation/example values or locally-generated strings,
@@ -201,4 +203,38 @@ test("honours the scanned project's .gitleaksignore", needsBinary, () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// A suppressed finding produces no output at all — the scan just passes. That silence is what
+// made allowlisting attractive as a way to hide a real finding instead of fixing it: a measured
+// agent run, blocked from committing a credential in a Kubernetes Secret, wrote the fingerprint
+// into .gitleaksignore and the commit went through. Reporting the count makes the bypass visible.
+test("reports what a project has suppressed", needsBinary, () => {
+  const dir = withDir({ "app.py": `STRIPE = "${STRIPE}"\n` });
+  try {
+    assert.deepEqual(readSuppressions(dir), []);
+
+    const fp = scanPath(dir).findings[0].fingerprint;
+    writeFileSync(path.join(dir, ".gitleaksignore"), `# reviewed: test fixture\n${fp}\n`);
+
+    assert.deepEqual(scanPath(dir).findings, [], "the finding should now be suppressed");
+    assert.deepEqual(readSuppressions(dir), [fp], "but the suppression must still be visible");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("readSuppressions ignores comments and blank lines, and tolerates no file", () => {
+  const dir = withDir({ ".gitleaksignore": "# why\n\n  a/b.py:rule:1  \n\n# more\nc/d.py:rule:2\n" });
+  try {
+    assert.deepEqual(readSuppressions(dir), ["a/b.py:rule:1", "c/d.py:rule:2"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  assert.deepEqual(readSuppressions("/nonexistent/secret-guard/path"), []);
+});
+
+test("SUPPRESSION_FILES names every file that can switch the scanner off", () => {
+  assert.ok(SUPPRESSION_FILES.includes(".gitleaksignore"));
+  assert.ok(SUPPRESSION_FILES.includes(".gitleaks.toml"));
 });

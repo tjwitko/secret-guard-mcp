@@ -17,7 +17,7 @@ Requires `gitleaks` on `PATH` (`brew install gitleaks`).
 - `lib/gitleaks.mjs` — spawn wrappers, `normalizeFindings()` (the redaction layer), `REMEDIATION`
 - `lib/paths.mjs` — `resolveScanPath()`, `SCAN_ROOT` containment
 - `gitleaks/extra-rules.toml` — `[extend] useDefault = true` plus the connection-string rule
-- `test/gitleaks.test.mjs` — 12 tests; the gitleaks-dependent ones skip cleanly if it isn't installed
+- `test/gitleaks.test.mjs` — 15 tests; the gitleaks-dependent ones skip cleanly if it isn't installed
 
 ## Common commands
 
@@ -66,6 +66,14 @@ gitleaks version                # confirm the prerequisite
   `../local-delegate-mcp/agent/agent-loop.mjs`, the loop's validation gate, and
   `../local-copilot-stack/githooks/pre-commit`. If you change `normalizeFindings`' output shape,
   those three call sites read `findings[].rule/startLine/fingerprint` and `summary.total`.
+- **`readSuppressions()` exists because silence is the failure mode.** A suppressed finding
+  produces no output at all — the scan simply passes — so allowlisting is the cheapest way to make
+  a real finding go away. An agent run did exactly that and its commit went through. Every
+  consumer should report the count even on a clean scan. `SUPPRESSION_FILES` is exported from
+  here so the list of files that can switch this scanner off lives in one place; the git hook and
+  the agent loop both consume it. Note gitleaks discovers `.gitleaksignore` from the scan target
+  regardless of `-i`, verified directly, so you cannot ask it what it suppressed — the file has to
+  be read.
 - **The remediation text says "rotate", on purpose.** A model's instinct is to delete the line
   and report success; for an already-committed secret that fixes nothing, since it remains in
   history and anyone who fetched the repo has it.
