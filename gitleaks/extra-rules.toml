@@ -27,3 +27,23 @@ keywords = ["://"]
   regexes = [
     '''(?i)^(password|pass|passwd|pwd|secret|changeme|example|placeholder|your[_-]?password|xxx+|\*+|<[^>]+>|\$\{[^}]+\}|%[^%]+%)$''',
   ]
+
+# Vendored dependency trees are not the caller's code, and a finding in one is unactionable:
+# you cannot fix a credential inside terraform-aws-modules' example configs or inside a package
+# in node_modules. This is not hypothetical -- a real agent run had its commit rejected four
+# times over heuristic hits in .terraform/modules/eks.kms/examples/, spent ten turns trying to
+# silence them (it wrote a .gitleaksignore, then a .gitignore, then just retried), and never
+# recovered. Telling someone to fix code they do not own is the same failure terraform-guard's
+# classifyValidationErrors exists to prevent.
+#
+# These directories are also not committed, so a real secret in one does not reach history
+# through this repo.
+[allowlist]
+description = "Vendored dependency trees"
+paths = [
+  '''(^|/)\.terraform/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)vendor/''',
+  '''(^|/)\.venv/''',
+  '''(^|/)__pycache__/''',
+]
