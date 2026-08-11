@@ -25,7 +25,10 @@ keywords = ["://"]
   # showing a connection-string format becomes a finding, and a scanner that fires on
   # documentation is one people turn off.
   regexes = [
-    '''(?i)^(password|pass|passwd|pwd|secret|changeme|example|placeholder|your[_-]?password|xxx+|\*+|<[^>]+>|\$\{[^}]+\}|%[^%]+%)$''',
+    # $(VAR) alongside ${VAR}: Kubernetes expands $(VAR) in env values, and it is also Make and
+    # shell command-substitution syntax. Missing it made a correct manifest
+    # (postgresql://$(DB_USER):$(DB_PASS)@...) fail the commit gate as a hardcoded credential.
+    '''(?i)^(password|pass|passwd|pwd|secret|changeme|example|placeholder|your[_-]?password|xxx+|\*+|<[^>]+>|\$\{[^}]+\}|\$\([^)]+\)|%[^%]+%|REPLACE[_A-Z]*)$''',
   ]
 
 # Vendored dependency trees are not the caller's code, and a finding in one is unactionable:
