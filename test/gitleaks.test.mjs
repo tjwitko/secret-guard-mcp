@@ -19,7 +19,7 @@ import {
 // deliberately not anything live.
 const STRIPE = "REDACTED_STRIPE_TEST_FIXTURE";
 const AWS_KEY = "REDACTED_AWS_TEST_FIXTURE";
-const DSN = "REDACTED_DSN_TEST_FIXTURE";
+const DSN = "REDACTED_DSN_TEST_FIXTURE";  // identity-guard:allow test material for the scanner under test
 
 const haveGitleaks = checkGitleaksInstalled();
 const needsBinary = { skip: haveGitleaks ? false : "gitleaks not installed" };
@@ -112,7 +112,7 @@ test("a sibling directory with a shared prefix is outside the root", () => {
 test("finds credentials across languages and config formats", needsBinary, () => {
   const dir = withDir({
     "app.py": `STRIPE = "${STRIPE}"\n`,
-    "config/settings.yaml": `aws_access_key_id: ${AWS_KEY}\n`,
+    "config/settings.yaml": `aws_access_key_id: ${AWS_KEY}\n`,  // identity-guard:allow test material for the scanner under test
     "deploy/values.json": `{"token": "REDACTED_SLACK_TEST_FIXTURE"}\n`,
   });
   try {
@@ -148,10 +148,10 @@ test("catches a password embedded in a connection string", needsBinary, () => {
 test("does not flag connection-string placeholders", needsBinary, () => {
   const dir = withDir({
     "README.md": [
-      "postgres://user:password@localhost:5432/db",
-      "mysql://admin:changeme@host/db",
-      "redis://default:${REDIS_PASSWORD}@cache:6379",
-      "mongodb://user:<your-password>@cluster/db",
+      "postgres://user:password@localhost:5432/db",  // identity-guard:allow test material for the scanner under test
+      "mysql://admin:changeme@host/db",  // identity-guard:allow test material for the scanner under test
+      "redis://default:${REDIS_PASSWORD}@cache:6379",  // identity-guard:allow test material for the scanner under test
+      "mongodb://user:<your-password>@cluster/db",  // identity-guard:allow test material for the scanner under test
     ].join("\n"),
   });
   try {

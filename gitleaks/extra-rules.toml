@@ -45,6 +45,12 @@ keywords = ["://"]
 description = "Vendored dependency trees"
 paths = [
   '''(^|/)\.terraform/''',
+  # Checkov writes modules fetched with --download-external-modules here, inside the scanned
+  # project rather than beside it. Its absence cost a benchmark run: 14 findings, every one in a
+  # vendored terraform-aws-modules example, none in the model's own code -- and because the
+  # pre-commit hook runs this scan, the commit could not be made either, so the run ended FAILED
+  # on work that was fine.
+  '''(^|/)\.external_modules/''',
   '''(^|/)node_modules/''',
   '''(^|/)vendor/''',
   '''(^|/)\.venv/''',
