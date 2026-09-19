@@ -5,8 +5,3 @@
 # reappears. That is the cost of precision, and it is the right side to err on.
 /Users/tomwitkowski/LLM/secret-guard-mcp/README.md:connection-string-password:40
 /Users/tomwitkowski/LLM/secret-guard-mcp/CLAUDE.md:connection-string-password:59
-/Users/tomwitkowski/LLM/secret-guard-mcp/CLAUDE.md:aws-access-token:52
-/Users/tomwitkowski/LLM/secret-guard-mcp/test/gitleaks.test.mjs:connection-string-password:22
-/Users/tomwitkowski/LLM/secret-guard-mcp/test/gitleaks.test.mjs:slack-bot-token:116
-/Users/tomwitkowski/LLM/secret-guard-mcp/test/gitleaks.test.mjs:aws-access-token:21
-/Users/tomwitkowski/LLM/secret-guard-mcp/test/gitleaks.test.mjs:stripe-access-token:20
