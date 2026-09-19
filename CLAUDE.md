@@ -49,7 +49,7 @@ gitleaks version                # confirm the prerequisite
 - **gitleaks exits 1 when it finds leaks** — success-with-results, not failure. Same shape as
   osv-scanner in dep-audit-mcp. Only unparseable output is a real error.
 - **gitleaks allowlists well-known documentation values.** `AKIAIOSFODNN7EXAMPLE` (AWS's own docs
-  example) is NOT flagged; a realistic key like `REDACTED_AWS_TEST_FIXTURE` is. Don't use published
+  example) is NOT flagged; a realistic key like a realistically-shaped one (see `test/gitleaks.test.mjs`, where it is assembled at runtime) is. Don't use published
   example credentials to test whether the scanner works — it will look broken.
 - **`heuristic: true` is a confidence flag, not a severity.** gitleaks publishes no severity, and
   inventing one would put a number on a judgement the tool never made. The heuristic rules
