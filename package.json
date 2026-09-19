@@ -1,5 +1,5 @@
 {
-  "name": "secret-guard-mcp",
+  "name": "@tjwitko/secret-guard-mcp",
   "version": "1.0.0",
   "private": true,
   "type": "module",
