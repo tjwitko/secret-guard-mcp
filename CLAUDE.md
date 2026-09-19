@@ -56,8 +56,8 @@ gitleaks version                # confirm the prerequisite
   (`generic-api-key`, `jwt`, …) are the false-positive source; the fix for a confirmed one is a
   `.gitleaksignore` fingerprint, not a lower threshold.
 - **The connection-string rule closes a verified gap, not a guessed one.** gitleaks 8.30.1 with
-  default rules does not flag `REDACTED_DSN_TEST_FIXTURE` in a YAML
-  file. `secretGroup = 1` reports only the password — without it the host and username get
+  default rules does not flag a DSN of the form `postgres://admin:<password>@host:5432/db` in a
+  YAML file. `secretGroup = 1` reports only the password — without it the host and username get
   redacted too and the finding is unreadable. The placeholder allowlist is not optional: a
   scanner that flags every README showing a URI format gets switched off, and then it protects
   nothing. Same lesson as terraform-guard's Deny-statement false positive.

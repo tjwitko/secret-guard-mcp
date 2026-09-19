@@ -7,7 +7,7 @@ title = "secret-guard-mcp"
 useDefault = true
 
 # Verified gap, not a speculative addition: gitleaks 8.30.1 with default rules does not flag
-#   database_url: REDACTED_DSN_TEST_FIXTURE
+#   database_url: postgres://admin:<password>@db.internal:5432/app
 # in a YAML file. A password inside a DSN is one of the most common ways a real credential ends
 # up in a config file, so this closes it.
 #
