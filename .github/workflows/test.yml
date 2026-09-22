@@ -1,0 +1,57 @@
+# The test suite, on every push and pull request.
+#
+# This repository is published, tagged and installed by other people. "It passed on my machine" is
+# the guarantee agent-gate exists to replace, so it is not the guarantee this repository ships with
+# either.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: tests (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22", "24"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci --ignore-scripts
+
+      # Without this, 8 of the 15 tests skip -- every one that actually drives the scanner. The job
+      # would be green having verified the normalisation helpers and nothing about detection.
+      # Pinned, because a scanner version is part of what a finding count means.
+      - name: gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          sudo tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+          sudo chmod +x /usr/local/bin/gitleaks
+          out="$(gitleaks version 2>&1 || true)"
+          case "${out%%$'\n'*}" in
+            *"$GITLEAKS_VERSION"*) echo "  ok  gitleaks -> ${out%%$'\n'*}" ;;
+            *) echo "::error::gitleaks reports '${out%%$'\n'*}', expected $GITLEAKS_VERSION"; exit 1 ;;
+          esac
+
+      # A skipped test is not a passing one, and this suite is the reason that rule exists here:
+      # its scanner-backed tests skip when gitleaks is absent.
+      - name: test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.txt
+          skipped=$(grep -oE 'skipped [0-9]+' test-output.txt | awk '{s+=$2} END{print s+0}')
+          if [ "$skipped" != "0" ]; then
+            echo "::error title=tests skipped::$skipped test(s) were skipped. With gitleaks installed none should be."
+            exit 1
+          fi
+          echo "::notice title=tests::no tests were skipped"
