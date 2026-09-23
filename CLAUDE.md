@@ -17,7 +17,10 @@ Requires `gitleaks` on `PATH` (`brew install gitleaks`).
 - `lib/gitleaks.mjs` — spawn wrappers, `normalizeFindings()` (the redaction layer), `REMEDIATION`
 - `lib/paths.mjs` — `resolveScanPath()`, `SCAN_ROOT` containment
 - `gitleaks/extra-rules.toml` — `[extend] useDefault = true` plus the connection-string rule
-- `test/gitleaks.test.mjs` — 15 tests; the gitleaks-dependent ones skip cleanly if it isn't installed
+- `test/gitleaks.test.mjs` — 15 tests. The gitleaks-dependent ones skip when it is not installed,
+  which is 8 of the 15: correct locally, and worthless in CI, where the job would be green having
+  verified the normalisation helpers and nothing about detection. `.github/workflows/test.yml`
+  installs a pinned gitleaks and fails the job if any test was skipped at all.
 
 ## Common commands
 
