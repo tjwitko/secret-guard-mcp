@@ -1,0 +1,27 @@
+# The contract this repository is held to, read by agent-gate in .github/workflows/gate.yml.
+#
+# Six checks are gated on what the task asked for. This file exists so the ones that apply here
+# actually run, and it states only what is true of this project: a requirement written to switch a
+# check on would be a fabricated requirement, which is worse than a missing check.
+
+An MCP server that finds hardcoded credentials in source and configuration.
+
+WHAT IT MUST DO
+- Expose `scan_path` and `scan_content` over MCP stdio, backed by gitleaks.
+- Never echo a credential value in a finding. A finding reaches a model's context and the run
+  transcript, so a scanner that repeats the value spreads the leak rather than containing it.
+- Report on every run which files could suppress it, because a suppressed finding produces no
+  output at all and silence is the failure mode.
+- Stay inside the directory it was pointed at: a secret scanner pointed at a home directory does
+  not merely read it, it reports what it found.
+
+HOW WE WILL JUDGE IT
+- Automated tests that someone else can run, covering the tools themselves and not only the
+  normalisation helpers behind them.
+- Errors distinguished from faults: gitleaks exiting non-zero because it found leaks has succeeded.
+  Only unparseable output is an error.
+- A check that cannot run must say so, and never pass.
+
+NOT IN SCOPE
+- No deployment artifacts. This is an MCP server distributed as a package, not a deployed service.
+- No records are stored here, and no credentials of our own are held.
