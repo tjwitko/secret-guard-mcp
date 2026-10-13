@@ -28,7 +28,7 @@ that has not touched disk yet, and **its findings never contain the secret**.
 ### Install
 
 ```bash
-npm install --save-dev github:tjwitko/secret-guard-mcp#v1.0.0
+npm install --save-dev github:tjwitko/secret-guard-mcp#v1.0.1
 ```
 
 ### Register it with an MCP client
