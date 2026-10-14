@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import path from "path";
+import { readFileSync } from "fs";
 
 import { resolveScanPath } from "./lib/paths.mjs";
 import {
@@ -29,7 +30,11 @@ sanitizeEnv(["PATH", "HOME", "SCAN_ROOT", "SECRET_GUARD_CONFIG"]);
 const SCAN_ROOT = path.resolve(process.env.SCAN_ROOT || process.cwd());
 const CONFIG_PATH = process.env.SECRET_GUARD_CONFIG || undefined;
 
-const server = new McpServer({ name: "secret-guard", version: "1.0.0" });
+// Read, not written in. This said "1.0.0" while package.json moved on, so an MCP client asking the
+// server what it was got an answer that was releases out of date.
+const { version: VERSION } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
+
+const server = new McpServer({ name: "secret-guard", version: VERSION });
 
 function notInstalled() {
   return { content: [{ type: "text", text: NOT_INSTALLED_MESSAGE }], isError: true };
