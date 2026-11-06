@@ -180,4 +180,4 @@ a tracked file is a fact, not a version-resolution guess. It works standalone wi
 
 ## License
 
-[Apache License 2.0](LICENSE) © 2026 Tom Witkowski
+[GNU Affero General Public License v3.0](LICENSE) © 2026 Tom Witkowski, for everything after v1.0.2. Releases up to and including v1.0.2 remain under Apache-2.0.
