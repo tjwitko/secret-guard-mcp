@@ -86,3 +86,14 @@ gitleaks version                # confirm the prerequisite
 - **Not covered:** live verification of whether a credential still works (trufflehog does this,
   but by sending the candidate to a third party — deliberately out of v1), and git *history*.
   `scan_path` sees the working tree; `gitleaks git` would cover history and hasn't been wired up.
+
+## How changes land
+
+Changes to this repository go through a pull request, not a push to `main`.
+
+- Work on a branch, push it, and open a pull request.
+- Wait for the four required checks (`agent-gate` and the three `tests` jobs) before merging.
+- Do not merge your own pull request unless the user says to; they merge.
+
+One exception: the wolfproof release moves this repository's wolfproof pin with its own script,
+which commits `.github/workflows/gate.yml` and pushes straight to `main`. Leave that as it is.
