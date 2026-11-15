@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, symlinkSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 
@@ -100,20 +100,8 @@ test("normalizeFindings tolerates an empty or missing report", () => {
 // Path containment
 // ---------------------------------------------------------------------------
 
-// A secret scanner pointed somewhere unintended does not just read those files, it reports what
-// it found in them — traversal here is credential disclosure, not merely unauthorized read.
-test("refuses to scan outside the scan root", () => {
-  assert.throws(() => resolveScanPath("../../../.aws", "/srv/project"), /refuses to scan outside/);
-  assert.throws(() => resolveScanPath("/etc/passwd", "/srv/project"), /refuses to scan outside/);
-  assert.equal(resolveScanPath("src/app.py", "/srv/project"), "/srv/project/src/app.py");
-  assert.equal(resolveScanPath(".", "/srv/project"), "/srv/project");
-});
-
-// A sibling directory sharing a prefix with the root is outside it. String-prefix checks without
-// the separator let /srv/project-secrets through.
-test("a sibling directory with a shared prefix is outside the root", () => {
-  assert.throws(() => resolveScanPath("/srv/project-secrets/x", "/srv/project"), /refuses to scan/);
-});
+// resolveScanPath itself is tested over a real tree of files and symlinks in test/paths.test.mjs.
+// The two tests here are the end-to-end half: what gitleaks does with the path it is handed.
 
 // ---------------------------------------------------------------------------
 // Real gitleaks runs
@@ -169,6 +157,47 @@ test("does not flag connection-string placeholders", needsBinary, () => {
     assert.deepEqual(findings, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// gitleaks given a path whose last component is a symlink to a directory scans nothing and reports
+// clean (gitleaks 8.30.1, verified directly). Before resolveScanPath returned real paths, a
+// SCAN_ROOT reached through a symlink -- /tmp on macOS is one -- handed gitleaks exactly that path
+// for a scan of ".", and every such scan came back clean whatever the tree held.
+test("a scan root reached through a symlink is still scanned", needsBinary, () => {
+  const dir = withDir({ "app.py": `STRIPE = "${STRIPE}"\n` });
+  const link = `${dir}-link`;
+  symlinkSync(dir, link);
+  try {
+    const { ok, findings } = scanPath(resolveScanPath(".", link));
+    assert.ok(ok);
+    assert.deepEqual(
+      findings.map((f) => f.rule),
+      ["stripe-access-token"]
+    );
+  } finally {
+    rmSync(link, { force: true });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// resolveScanPath bounds the path the caller names; this pins the other half, that gitleaks does
+// not follow a symlink out of the tree while it walks it. It does not by default, and
+// --follow-symlinks would change that: a link to ~/.aws in a scanned project would put another
+// directory's credentials in the report.
+test("does not follow a symlink out of the scanned tree", needsBinary, () => {
+  const outside = withDir({ "creds.txt": `STRIPE = "${STRIPE}"\n`, "dir/more.txt": `STRIPE = "${STRIPE}"\n` });
+  const dir = withDir({ "app.py": "x = 1\n" });
+  symlinkSync(path.join(outside, "creds.txt"), path.join(dir, "linked.txt"));
+  symlinkSync(path.join(outside, "dir"), path.join(dir, "linked-dir"));
+  try {
+    assert.equal(scanPath(outside).findings.length, 2, "the planted secrets must be detectable");
+    const { ok, findings } = scanPath(dir);
+    assert.ok(ok);
+    assert.deepEqual(findings, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
   }
 });
 
