@@ -17,8 +17,9 @@ Requires `gitleaks` on `PATH` (`brew install gitleaks`).
 - `lib/gitleaks.mjs` — spawn wrappers, `normalizeFindings()` (the redaction layer), `REMEDIATION`
 - `lib/paths.mjs` — `resolveScanPath()`, `SCAN_ROOT` containment
 - `gitleaks/extra-rules.toml` — `[extend] useDefault = true` plus the connection-string rule
-- `test/gitleaks.test.mjs` — 15 tests. The gitleaks-dependent ones skip when it is not installed,
-  which is 8 of the 15: correct locally, and worthless in CI, where the job would be green having
+- `test/gitleaks.test.mjs` — 15 tests, and `test/paths.test.mjs` 5 more over a real tree of files
+  and symlinks. The gitleaks-dependent ones skip when it is not installed, which is 10 of the 20:
+  correct locally, and worthless in CI, where the job would be green having
   verified the normalisation helpers and nothing about detection. `.github/workflows/test.yml`
   installs a pinned gitleaks and fails the job if any test was skipped at all.
 
@@ -82,7 +83,12 @@ gitleaks version                # confirm the prerequisite
   history and anyone who fetched the repo has it.
 - **Path containment matters more here than in the siblings.** A secret scanner pointed at
   `~/.aws` doesn't merely read it, it *reports what it found* — traversal becomes credential
-  disclosure. `resolveScanPath` is the control; redaction only limits the blast radius.
+  disclosure. `resolveScanPath` is the control; redaction only limits the blast radius. It compares
+  real paths (`realpathSync` on root and target) and returns the real one, for a reason specific
+  to gitleaks: handed a path whose last component is a symlink to a directory, `gitleaks dir`
+  scans nothing and reports clean (8.30.1, verified). A text comparison passed such a path
+  through, so every scan of "." under a root reached through a link came back clean. Walking a
+  tree, gitleaks does not follow symlinks unless `--follow-symlinks` is passed; don't pass it.
 - **Not covered:** live verification of whether a credential still works (trufflehog does this,
   but by sending the candidate to a third party — deliberately out of v1), and git *history*.
   `scan_path` sees the working tree; `gitleaks git` would cover history and hasn't been wired up.
