@@ -131,12 +131,14 @@ off, and then it protects nothing.
 
 | variable | default | purpose |
 |---|---|---|
-| `SCAN_ROOT` | the process's working directory at startup | bounds every scan; `path` must resolve inside it |
+| `SCAN_ROOT` | the process's working directory at startup | bounds every scan; `path` must exist and its real path, after symlinks, must be inside it |
 | `SECRET_GUARD_CONFIG` | the bundled `gitleaks/extra-rules.toml` | override the gitleaks config |
 
 **Path containment matters more here than for most scanners.** One pointed at `~/.aws` does not
 merely read it — it *reports what it found*, so traversal becomes credential disclosure. Redaction
-only limits the blast radius; containment is the control.
+only limits the blast radius; containment is the control. It compares real paths: a symlink in
+the project that points outside `SCAN_ROOT` is refused, and gitleaks does not follow symlinks
+while it walks a directory.
 
 Only `PATH`, `HOME`, `SCAN_ROOT` and `SECRET_GUARD_CONFIG` survive startup. Everything else in
 `process.env` is deleted, so the server never inherits secrets from whatever spawned it.
@@ -162,7 +164,7 @@ Only `PATH`, `HOME`, `SCAN_ROOT` and `SECRET_GUARD_CONFIG` survive startup. Ever
 
 ```bash
 npm install
-npm test          # 15 tests; the gitleaks-backed ones report if it is absent
+npm test          # 20 tests; the gitleaks-backed ones report if it is absent
 ```
 
 If you write a test credential, assemble it at runtime rather than writing the literal. GitHub's
