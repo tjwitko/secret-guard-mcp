@@ -13,7 +13,7 @@
 # secret-guard:
 # secret-guard: To move to a newer gitleaks: replace everything below these lines with that release's
 # secret-guard: config/gitleaks.toml, re-apply the one change if it is still needed, and update the version and
-# secret-guard: the checksum in test/gitleaks.test.mjs, which checks that this file is that release's file,
+# secret-guard: the checksum in test/default-rules.test.mjs, which checks that this file is that release's file,
 # secret-guard: changed in that line and nowhere else.
 # secret-guard:
 # secret-guard: Named *.gitleaks.toml on purpose: this file's own allowlist skips paths matching gitleaks\.toml,
