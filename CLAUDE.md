@@ -16,9 +16,12 @@ Requires `gitleaks` on `PATH` (`brew install gitleaks`).
 - `index.mjs` — env sanitization, the two tools
 - `lib/gitleaks.mjs` — spawn wrappers, `normalizeFindings()` (the redaction layer), `REMEDIATION`
 - `lib/paths.mjs` — `resolveScanPath()`, `SCAN_ROOT` containment
-- `gitleaks/extra-rules.toml` — `[extend] useDefault = true` plus the connection-string rule
-- `test/gitleaks.test.mjs` — 15 tests, and `test/paths.test.mjs` 5 more over a real tree of files
-  and symlinks. The gitleaks-dependent ones skip when it is not installed, which is 10 of the 20:
+- `gitleaks/extra-rules.toml` — `[extend] path = "default.gitleaks.toml"` plus the connection-string rule
+- `gitleaks/default.gitleaks.toml` — gitleaks 8.30.1's default config with one allowlist regex
+  anchored; its top says which, why, and how to take a newer release's
+- `test/gitleaks.test.mjs` — 15 tests, `test/paths.test.mjs` 5 more over a real tree of files
+  and symlinks, and `test/default-rules.test.mjs` 7 on the default rules and on scans that did not
+  run. The gitleaks-dependent ones skip when it is not installed, which is 16 of the 27:
   correct locally, and worthless in CI, where the job would be green having
   verified the normalisation helpers and nothing about detection. `.github/workflows/test.yml`
   installs a pinned gitleaks and fails the job if any test was skipped at all.
@@ -33,9 +36,27 @@ gitleaks version                # confirm the prerequisite
 
 ## Things to know
 
-- **`[extend] useDefault = true` is load-bearing.** Without it, defining any rule in
-  `extra-rules.toml` REPLACES gitleaks' ~170 built-in rules instead of adding to them — a config
-  that looks like it tightened the scan while actually gutting it.
+- **The `[extend]` in `extra-rules.toml` is load-bearing.** Without it, defining any rule there
+  REPLACES gitleaks' ~170 default rules instead of adding to them — a config that looks like it
+  tightened the scan while actually gutting it.
+- **It extends the copy beside it, not `useDefault = true`, and must not go back.** The defaults
+  built into gitleaks 8.30.1 allowlist any secret matching `(?i)^true|false|null$`, which by
+  precedence is "contains false" (or starts with true, or ends with null) and applies to every
+  rule: 5 of 120,000 private-key-shaped texts were not reported, and a connection-string password
+  starting with `True` never was. An extending config can only add allowlist entries, so
+  `default.gitleaks.toml` is upstream's file with that regex anchored. Upstream:
+  gitleaks/gitleaks#2293. Two consequences. Rules no longer arrive with a gitleaks upgrade:
+  re-vendor as the top of the file describes, and `test/default-rules.test.mjs` fails when the
+  binary and the copy have parted or the copy differs from upstream in anything else. And the
+  file is named `*.gitleaks.toml` because its own allowlist skips that path; under another name
+  gitleaks flags one of its rule regexes in it.
+- **gitleaks is started in the config's directory.** It reads `[extend] path` relative to where
+  it is started. So every path handed to it is made whole first (`path.resolve` in `scanPath`,
+  `configFile()`); a relative target passed straight through would be read from `gitleaks/`.
+- **No report is not a clean report.** A scan that ran prints `[]`. Nothing on stdout is gitleaks
+  ending before it scanned, e.g. a config it could not load, and that used to come back as
+  `{ ok: true, findings: [] }`. Likewise `gitleaks dir` on a path that does not exist prints
+  `[]` and exits 0, so `scanPath` checks first. Both are errors now; keep them errors.
 - **`gitleaks stdin` is why `scan_content` exists at all.** The alternative — write a temp file
   and scan that — would put the candidate secret on disk, which is the thing the pre-write check
   is called to prevent. Trade-off: with no filename, path-based allowlists and `.gitleaksignore`
@@ -51,7 +72,7 @@ gitleaks version                # confirm the prerequisite
   allowlisted false positives keep failing the gate, and a gate that fails on known-good code
   gets removed.
 - **gitleaks exits 1 when it finds leaks** — success-with-results, not failure. Same shape as
-  osv-scanner in dep-audit-mcp. Only unparseable output is a real error.
+  osv-scanner in dep-audit-mcp. Only unparseable or absent output is a real error.
 - **gitleaks allowlists well-known documentation values.** `AKIAIOSFODNN7EXAMPLE` (AWS's own docs
   example) is NOT flagged; a realistic key like a realistically-shaped one (see `test/gitleaks.test.mjs`, where it is assembled at runtime) is. Don't use published
   example credentials to test whether the scanner works — it will look broken.
