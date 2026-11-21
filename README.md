@@ -88,6 +88,16 @@ Both return the same shape:
 }
 ```
 
+**A scan that left something unread is not a clean scan.** gitleaks walks past a file or a
+directory it is not permitted to read, and past the rest of a tree when its time limit (120
+seconds) runs out, and still reports no findings. Here, if nothing was found, that is an error
+naming what was not read. If something was found, the findings are returned as usual with a
+`skipped` list beside them, each entry a `path` and a `reason`; once the findings are fixed, the
+next scan is the error. The error's first block is the sentence; a second block holds
+`{ target, incomplete: true, skipped }` as JSON, for a caller with a rule of its own about a
+directory it already knows it cannot read. `scanPath` as a library does the same: `{ ok: false, error, skipped }`
+with no findings, `{ ok: true, findings, skipped }` with some.
+
 ---
 
 ## Findings never contain the secret
@@ -195,6 +205,10 @@ Only `PATH`, `HOME`, `SCAN_ROOT` and `SECRET_GUARD_CONFIG` survive startup. Ever
   `.gitleaksignore` in the directory the caller is in, which through v1.0.3 could silence it with a
   `:<rule>:<line>` entry; the only one read now is one beside the config in use.
 - **Working tree only.** `scan_path` does not scan git history.
+- **What gitleaks leaves unread by design is not reported as skipped:** archives (`.zip`, `.gz`,
+  `.tar`, `.7z`), files whose first bytes are a binary format, empty files, symlinks, and the paths
+  on its allowlist. Nor is a file it could not open for a reason other than permission, which it
+  passes without a word at any log level.
 - **Detection is not the real fix.** The best protection is having no static credential to leak —
   workload identity, IRSA, short-lived STS credentials.
 
@@ -204,7 +218,7 @@ Only `PATH`, `HOME`, `SCAN_ROOT` and `SECRET_GUARD_CONFIG` survive startup. Ever
 
 ```bash
 npm install
-npm test          # 30 tests; the gitleaks-backed ones report if it is absent
+npm test          # 39 tests; the gitleaks-backed ones report if it is absent
 ```
 
 If you write a test credential, assemble it at runtime rather than writing the literal. GitHub's

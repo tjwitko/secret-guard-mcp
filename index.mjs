@@ -40,12 +40,26 @@ function notInstalled() {
   return { content: [{ type: "text", text: NOT_INSTALLED_MESSAGE }], isError: true };
 }
 
-function report(findings, extra) {
+// A scan that could not be trusted. The first block is the sentence, which is all some callers
+// read. When the reason is that gitleaks left paths unread, a second block carries them as JSON,
+// for a caller with a rule of its own about paths it already knows are unreadable.
+function scanError(result, extra) {
+  const content = [{ type: "text", text: result.error }];
+  if (result.skipped?.length) {
+    content.push({ type: "text", text: JSON.stringify({ ...extra, incomplete: true, skipped: result.skipped }, null, 2) });
+  }
+  return { content, isError: true };
+}
+
+// `skipped` is there only beside findings: what gitleaks did not read, with what it found in the
+// rest. With no findings a scan that skipped something is not reported at all, it is an error.
+function report(findings, extra, skipped) {
   const body = {
     ...extra,
     clean: findings.length === 0,
     summary: summarize(findings),
     findings,
+    ...(skipped?.length ? { skipped } : {}),
     ...(findings.length ? { remediation: REMEDIATION } : {}),
   };
   return { content: [{ type: "text", text: JSON.stringify(body, null, 2) }] };
@@ -78,9 +92,9 @@ server.tool(
     if (!checkGitleaksInstalled()) return notInstalled();
 
     const result = scanPath(resolved, { configPath: CONFIG_PATH });
-    if (!result.ok) return { content: [{ type: "text", text: result.error }], isError: true };
+    if (!result.ok) return scanError(result, { target: resolved });
 
-    return report(result.findings, { target: resolved });
+    return report(result.findings, { target: resolved }, result.skipped);
   }
 );
 
@@ -104,9 +118,9 @@ server.tool(
     if (!checkGitleaksInstalled()) return notInstalled();
 
     const result = scanContent(content, { pathLabel: path_label, configPath: CONFIG_PATH });
-    if (!result.ok) return { content: [{ type: "text", text: result.error }], isError: true };
+    if (!result.ok) return scanError(result, { pathLabel: path_label || "(content)" });
 
-    return report(result.findings, { pathLabel: path_label || "(content)" });
+    return report(result.findings, { pathLabel: path_label || "(content)" }, result.skipped);
   }
 );
 

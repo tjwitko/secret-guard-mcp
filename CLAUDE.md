@@ -20,8 +20,9 @@ Requires `gitleaks` on `PATH` (`brew install gitleaks`).
 - `gitleaks/default.gitleaks.toml` — gitleaks 8.30.1's default config with one allowlist regex
   anchored; its top says which, why, and how to take a newer release's
 - `test/gitleaks.test.mjs` — 18 tests, `test/paths.test.mjs` 5 more over a real tree of files
-  and symlinks, and `test/default-rules.test.mjs` 7 on the default rules and on scans that did not
-  run. The gitleaks-dependent ones skip when it is not installed, which is 19 of the 30:
+  and symlinks, `test/default-rules.test.mjs` 7 on the default rules and on scans that did not
+  run, and `test/skipped.test.mjs` 9 on trees gitleaks could not read all of. The
+  gitleaks-dependent ones skip when it is not installed, which is 26 of the 39:
   correct locally, and worthless in CI, where the job would be green having
   verified the normalisation helpers and nothing about detection. `.github/workflows/test.yml`
   installs a pinned gitleaks and fails the job if any test was skipped at all.
@@ -61,6 +62,21 @@ gitleaks version                # confirm the prerequisite
   ending before it scanned, e.g. a config it could not load, and that used to come back as
   `{ ok: true, findings: [] }`. Likewise `gitleaks dir` on a path that does not exist prints
   `[]` and exits 0, so `scanPath` checks first. Both are errors now; keep them errors.
+- **Nor is a report on part of the tree.** gitleaks walks past what it cannot read, prints `[]`
+  and exits 0: a directory or file of mode 000, a directory that can be listed and not entered.
+  At its time limit it prints `[]` and exits 1. All came back `{ ok: true, findings: [] }`. It
+  says so only in its log, so the log level is `warn` and `skipped()` reads stderr: every WRN
+  and ERR line counts unless it is on the short list of lines about something else, so a
+  release that words a skip differently is noticed. `settle()` then decides: nothing found and
+  something skipped is an error; findings and something skipped is the findings with a
+  `skipped` list, because turning a finding into an error would turn a caller's "blocked" into
+  "could not run". Do not pass stderr on whole: at `warn` gitleaks can quote a line of a file.
+  The server's error keeps the sentence as its first block, which is the only one wolfproof
+  reads, and adds the list as a second.
+- **`-i` is a directory, never the file being scanned.** gitleaks takes `-i` as a directory to
+  look in or as the ignore file itself. Given the target, a file scanned alone was read as its
+  own ignore file: one naming its own fingerprint came back clean, and at `warn` its other
+  lines, a token's among them, went to stderr as invalid entries. `ignorePathFor()`.
 - **`gitleaks stdin` is why `scan_content` exists at all.** The alternative — write a temp file
   and scan that — would put the candidate secret on disk, which is the thing the pre-write check
   is called to prevent. Trade-off: with no filename, path-based allowlists and `.gitleaksignore`
