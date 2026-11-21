@@ -25,6 +25,9 @@ that has not touched disk yet, and **its findings never contain the secret**.
 
   If it is missing the tools say so. They do not return a clean result.
 
+  The rules are those of **gitleaks 8.30.1** (see [The default rules](#the-default-rules)), so that is
+  the release to install. A newer binary runs them; it does not bring newer rules with it.
+
 ### Install
 
 ```bash
@@ -127,12 +130,46 @@ off, and then it protects nothing.
 
 ---
 
+## The default rules
+
+The ~170 default rules are gitleaks' own, but they are read from a copy in this repository,
+`gitleaks/default.gitleaks.toml`, and not from the ones built into the binary. The copy is
+gitleaks 8.30.1's `config/gitleaks.toml` with **one line changed**.
+
+gitleaks' default allowlist holds the regex `(?i)^true|false|null$`. It was written to dismiss a
+"secret" that is the literal `true`, `false` or `null`. By precedence it means *starts with
+true, or contains false, or ends with null*, in any letter case, and it applies to every rule. So a
+credential whose text happened to contain "false" was not reported at all:
+
+- of 120,000 texts of a private key's shape, 5 were missed, each with the word somewhere in its
+  base64. That is one text of an RSA-2048 key's size in 24,000, and more often for longer keys;
+- a connection-string password that merely starts with `True` was missed every time.
+
+The copy anchors it, `(?i)^(?:true|false|null)$`. On 35 real projects the findings were the same
+447 before and after, so nothing that was reported has gone and nothing new appears there. It is
+reported upstream as [gitleaks#2293](https://github.com/gitleaks/gitleaks/issues/2293); a config that
+extends the built-in defaults cannot take an allowlist entry out, which is why the copy exists.
+
+The cost is that rules no longer arrive with a gitleaks upgrade. The top of the file says how to
+take a newer release's, and a test fails when the installed gitleaks is not the release the copy
+came from, or when the copy differs from that release's file in anything but that line.
+
+---
+
+## A scan that could not run says so
+
+A clean result means gitleaks read the target and wrote a report with nothing in it. If the config
+cannot be loaded, if the path is not there, or if gitleaks ends without a report, the tools return
+an error. Up to v1.0.3 the first two came back as a clean scan.
+
+---
+
 ## Configuration
 
 | variable | default | purpose |
 |---|---|---|
 | `SCAN_ROOT` | the process's working directory at startup | bounds every scan; `path` must exist and its real path, after symlinks, must be inside it |
-| `SECRET_GUARD_CONFIG` | the bundled `gitleaks/extra-rules.toml` | override the gitleaks config |
+| `SECRET_GUARD_CONFIG` | the bundled `gitleaks/extra-rules.toml` | override the gitleaks config. A relative `[extend] path` in it is read from that file's own directory. A config of your own that says `useDefault = true` gets the built-in allowlist described above |
 
 **Path containment matters more here than for most scanners.** One pointed at `~/.aws` does not
 merely read it — it *reports what it found*, so traversal becomes credential disclosure. Redaction
@@ -164,7 +201,7 @@ Only `PATH`, `HOME`, `SCAN_ROOT` and `SECRET_GUARD_CONFIG` survive startup. Ever
 
 ```bash
 npm install
-npm test          # 20 tests; the gitleaks-backed ones report if it is absent
+npm test          # 27 tests; the gitleaks-backed ones report if it is absent
 ```
 
 If you write a test credential, assemble it at runtime rather than writing the literal. GitHub's
@@ -183,3 +220,6 @@ a tracked file is a fact, not a version-resolution guess. It works standalone wi
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE) © 2026 Tom Witkowski, for everything after v1.0.2. Releases up to and including v1.0.2 remain under Apache-2.0.
+
+`gitleaks/default.gitleaks.toml` is gitleaks' default configuration, © 2019 Zachary Rice, under the
+MIT License: see `gitleaks/LICENSE-gitleaks`.

@@ -1,10 +1,17 @@
 title = "secret-guard-mcp"
 
-# Keep every one of gitleaks' ~170 built-in rules and add to them. Without this, defining any
+# Keep every one of gitleaks' ~170 default rules and add to them. Without an [extend], defining any
 # rule here would REPLACE the default set rather than extend it -- a config that looks like it
 # tightened the scan while actually gutting it.
+#
+# The defaults are the copy beside this file, not the ones built into the binary (useDefault = true,
+# as this was up to v1.0.3). The built-in global allowlist drops any finding whose secret contains
+# "false", starts with "true" or ends with "null", and an extending config cannot take an allowlist
+# entry out. default.gitleaks.toml is gitleaks' own file with that one regex anchored, and says so
+# at its top. The path is relative to the directory gitleaks is started in, which is why
+# lib/gitleaks.mjs starts it in the directory of the config it is given.
 [extend]
-useDefault = true
+path = "default.gitleaks.toml"
 
 # Verified gap, not a speculative addition: gitleaks 8.30.1 with default rules does not flag
 #   database_url: postgres://admin:<password>@db.internal:5432/app
