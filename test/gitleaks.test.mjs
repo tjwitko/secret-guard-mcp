@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, symlinkSync } from "fs";
+import { mkdtempSync, writeFileSync, mkdirSync, realpathSync, rmSync, symlinkSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 
@@ -201,6 +201,60 @@ test("does not follow a symlink out of the scanned tree", needsBinary, () => {
   }
 });
 
+// scanPath is also used as a library, by callers that have not been through resolveScanPath: the
+// commit hook's validator hands it whatever directory it was given. Measured on f8b2a04, a link to
+// a directory that held a credential came back { ok: true, findings: [] }, and so did a link to a
+// link, a relative link, and the link written with a trailing slash; the same directory by its real
+// path gave the finding. scanPath now reads the real path itself.
+test("a link to a directory is scanned as the directory it points at", needsBinary, () => {
+  const dir = realpathSync(withDir({ "app.py": `STRIPE = "${STRIPE}"\n`, "sub/more.py": `STRIPE = "${STRIPE}"\n` }));
+  const base = realpathSync(mkdtempSync(path.join(tmpdir(), "secret-guard-links-")));
+  symlinkSync(dir, path.join(base, "link"));
+  symlinkSync(path.join(base, "link"), path.join(base, "link-to-link"));
+  symlinkSync(path.relative(base, dir), path.join(base, "relative-link"));
+  const byFile = (findings) => [...findings].sort((a, b) => a.file.localeCompare(b.file));
+  try {
+    const direct = scanPath(dir);
+    assert.ok(direct.ok, direct.error);
+    assert.deepEqual(byFile(direct.findings).map((f) => f.file), [path.join(dir, "app.py"), path.join(dir, "sub", "more.py")]);
+    for (const name of ["link", "link/", "link-to-link", "relative-link"]) {
+      const linked = scanPath(`${base}/${name}`);
+      assert.ok(linked.ok, `${name}: ${linked.error}`);
+      // The same findings in every part, so under the real path and with its fingerprints.
+      assert.deepEqual(byFile(linked.findings), byFile(direct.findings), name);
+    }
+    // So the directory's own .gitleaksignore means the same through a link as it does directly.
+    const ignored = direct.findings.find((f) => f.file === path.join(dir, "app.py"));
+    writeFileSync(path.join(dir, ".gitleaksignore"), ignored.fingerprint + "\n");
+    for (const target of [dir, path.join(base, "link")]) {
+      assert.deepEqual(scanPath(target).findings.map((f) => f.file), [path.join(dir, "sub", "more.py")], target);
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The same for a link to one file: gitleaks reads nothing through it and reports clean.
+test("a link to a file is scanned as the file it points at, and a link to nothing is an error", needsBinary, () => {
+  const dir = realpathSync(withDir({ "real/app.py": `STRIPE = "${STRIPE}"\n` }));
+  symlinkSync(path.join(dir, "real", "app.py"), path.join(dir, "linked.py"));
+  symlinkSync(path.join(dir, "nowhere"), path.join(dir, "dangling"));
+  try {
+    const linked = scanPath(path.join(dir, "linked.py"));
+    assert.ok(linked.ok, linked.error);
+    assert.deepEqual(
+      linked.findings.map((f) => [f.rule, f.file]),
+      [["stripe-access-token", path.join(dir, "real", "app.py")]]
+    );
+    const dangling = scanPath(path.join(dir, "dangling"));
+    assert.equal(dangling.ok, false, "nothing was read, and that is not a clean scan");
+    assert.match(dangling.error, /dangling is not there, so nothing was scanned/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("a clean tree reports no findings", needsBinary, () => {
   const dir = withDir({ "app.py": "import os\nKEY = os.environ['API_KEY']\n" });
   try {
@@ -259,6 +313,38 @@ test("reports what a project has suppressed", needsBinary, () => {
     assert.deepEqual(scanPath(dir).findings, [], "the finding should now be suppressed");
     assert.deepEqual(readSuppressions(dir), [fp], "but the suppression must still be visible");
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// A finding in content has no file, so its fingerprint is ":<rule>:<line>", and gitleaks reads the
+// .gitleaksignore of the directory it is started in. Through v1.0.3 that was the caller's
+// directory: measured on 71f608c, a project whose ignore file held that one line got no finding
+// from scanContent for any content with that rule on that line, which is the check that runs before
+// a file is written. gitleaks is started beside its config now, so the caller's ignore file is not
+// read. Nothing said so, and nothing held it.
+test("a .gitleaksignore where the caller is does not silence scan_content", needsBinary, () => {
+  const content = `DATABASE_URL = "${DSN}"\n`;
+  const found = scanContent(content);
+  assert.ok(found.ok, found.error);
+  assert.deepEqual(found.findings.map((f) => f.fingerprint), [":connection-string-password:1"], "no file in the fingerprint");
+
+  const dir = realpathSync(withDir({ "app.py": content }));
+  const was = process.cwd();
+  try {
+    const inFile = scanPath(dir).findings;
+    assert.equal(inFile.length, 1);
+    writeFileSync(path.join(dir, ".gitleaksignore"), `${found.findings[0].fingerprint}\n${inFile[0].fingerprint}\n`);
+    process.chdir(dir);
+    for (const options of [undefined, { pathLabel: "app.py" }]) {
+      const again = scanContent(content, options);
+      assert.ok(again.ok, again.error);
+      assert.deepEqual(again.findings.map((f) => f.rule), ["connection-string-password"], JSON.stringify(options));
+    }
+    // The file is read and does what it is for: the same bytes, as a file of that project.
+    assert.deepEqual(scanPath(dir), { ok: true, findings: [] });
+  } finally {
+    process.chdir(was);
     rmSync(dir, { recursive: true, force: true });
   }
 });

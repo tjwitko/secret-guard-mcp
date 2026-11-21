@@ -19,9 +19,9 @@ Requires `gitleaks` on `PATH` (`brew install gitleaks`).
 - `gitleaks/extra-rules.toml` — `[extend] path = "default.gitleaks.toml"` plus the connection-string rule
 - `gitleaks/default.gitleaks.toml` — gitleaks 8.30.1's default config with one allowlist regex
   anchored; its top says which, why, and how to take a newer release's
-- `test/gitleaks.test.mjs` — 15 tests, `test/paths.test.mjs` 5 more over a real tree of files
+- `test/gitleaks.test.mjs` — 18 tests, `test/paths.test.mjs` 5 more over a real tree of files
   and symlinks, and `test/default-rules.test.mjs` 7 on the default rules and on scans that did not
-  run. The gitleaks-dependent ones skip when it is not installed, which is 16 of the 27:
+  run. The gitleaks-dependent ones skip when it is not installed, which is 19 of the 30:
   correct locally, and worthless in CI, where the job would be green having
   verified the normalisation helpers and nothing about detection. `.github/workflows/test.yml`
   installs a pinned gitleaks and fails the job if any test was skipped at all.
@@ -53,6 +53,10 @@ gitleaks version                # confirm the prerequisite
 - **gitleaks is started in the config's directory.** It reads `[extend] path` relative to where
   it is started. So every path handed to it is made whole first (`path.resolve` in `scanPath`,
   `configFile()`); a relative target passed straight through would be read from `gitleaks/`.
+  It also decides which `.gitleaksignore` `scan_content` can be silenced by: gitleaks reads the
+  one where it is started, and a finding in content has the fingerprint `:<rule>:<line>`. Through
+  v1.0.3 that was the caller's directory, so a project's own ignore file could switch the
+  pre-write check off; now it is only one beside the config. A test holds it.
 - **No report is not a clean report.** A scan that ran prints `[]`. Nothing on stdout is gitleaks
   ending before it scanned, e.g. a config it could not load, and that used to come back as
   `{ ok: true, findings: [] }`. Likewise `gitleaks dir` on a path that does not exist prints
@@ -110,6 +114,10 @@ gitleaks version                # confirm the prerequisite
   scans nothing and reports clean (8.30.1, verified). A text comparison passed such a path
   through, so every scan of "." under a root reached through a link came back clean. Walking a
   tree, gitleaks does not follow symlinks unless `--follow-symlinks` is passed; don't pass it.
+  `scanPath` takes the real path too (`realpathSync`), for callers that use it as a library and
+  never went through `resolveScanPath`: a link to a directory or a file, as the last part of the
+  path, came back `{ ok: true, findings: [] }`. It does not check containment; that is still
+  `resolveScanPath`'s.
 - **Not covered:** live verification of whether a credential still works (trufflehog does this,
   but by sending the candidate to a third party — deliberately out of v1), and git *history*.
   `scan_path` sees the working tree; `gitleaks git` would cover history and hasn't been wired up.

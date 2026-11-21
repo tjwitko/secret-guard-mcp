@@ -175,7 +175,8 @@ an error. Up to v1.0.3 the first two came back as a clean scan.
 merely read it — it *reports what it found*, so traversal becomes credential disclosure. Redaction
 only limits the blast radius; containment is the control. It compares real paths: a symlink in
 the project that points outside `SCAN_ROOT` is refused, and gitleaks does not follow symlinks
-while it walks a directory.
+while it walks a directory. `scanPath`, used as a library, has no `SCAN_ROOT`: it scans the real
+path of what it is given, so a link to a directory or a file is scanned as what it points at.
 
 Only `PATH`, `HOME`, `SCAN_ROOT` and `SECRET_GUARD_CONFIG` survive startup. Everything else in
 `process.env` is deleted, so the server never inherits secrets from whatever spawned it.
@@ -190,7 +191,9 @@ Only `PATH`, `HOME`, `SCAN_ROOT` and `SECRET_GUARD_CONFIG` survive startup. Ever
   real, which cuts false positives sharply — by sending the candidate credential to a third party.
   Deliberately out of v1; it would be opt-in.
 - **`scan_content` has no filename**, so path-based allowlists and `.gitleaksignore` do not apply.
-  It can flag something `scan_path` would suppress on the same bytes.
+  It can flag something `scan_path` would suppress on the same bytes. That includes a
+  `.gitleaksignore` in the directory the caller is in, which through v1.0.3 could silence it with a
+  `:<rule>:<line>` entry; the only one read now is one beside the config in use.
 - **Working tree only.** `scan_path` does not scan git history.
 - **Detection is not the real fix.** The best protection is having no static credential to leak —
   workload identity, IRSA, short-lived STS credentials.
@@ -201,7 +204,7 @@ Only `PATH`, `HOME`, `SCAN_ROOT` and `SECRET_GUARD_CONFIG` survive startup. Ever
 
 ```bash
 npm install
-npm test          # 27 tests; the gitleaks-backed ones report if it is absent
+npm test          # 30 tests; the gitleaks-backed ones report if it is absent
 ```
 
 If you write a test credential, assemble it at runtime rather than writing the literal. GitHub's
