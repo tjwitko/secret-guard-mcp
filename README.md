@@ -98,6 +98,11 @@ next scan is the error. The error's first block is the sentence; a second block 
 directory it already knows it cannot read. `scanPath` as a library does the same: `{ ok: false, error, skipped }`
 with no findings, `{ ok: true, findings, skipped }` with some.
 
+The same holds for content: if gitleaks ends before it has read all of what `scan_content` handed
+it, a report from it is a report on part of the content, and is treated the same way. When it
+wrote no report, because it could not load its config for instance, the error is gitleaks' own
+reason whatever the size of the content.
+
 ---
 
 ## Findings never contain the secret
@@ -218,7 +223,7 @@ Only `PATH`, `HOME`, `SCAN_ROOT` and `SECRET_GUARD_CONFIG` survive startup. Ever
 
 ```bash
 npm install
-npm test          # 39 tests; the gitleaks-backed ones report if it is absent
+npm test          # 41 tests; the gitleaks-backed ones report if it is absent
 ```
 
 If you write a test credential, assemble it at runtime rather than writing the literal. GitHub's

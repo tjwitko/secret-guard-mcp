@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-import { checkGitleaksInstalled, scanPath, skipped } from "../lib/gitleaks.mjs";
+import { checkGitleaksInstalled, scanContent, scanPath, skipped } from "../lib/gitleaks.mjs";
 
 // A scan that left part of the tree unread is not a clean scan.
 //
@@ -278,14 +278,22 @@ test("skipped() reads gitleaks' log: what it did not read, and nothing else", ()
 // it takes exit 1 for "findings", and there were none. The limit is 120 seconds, so the real thing
 // is not run here; a stand-in for gitleaks prints what the real one printed (measured with
 // --timeout 1 on a tree of 1.6 GB) and the wrapper is run against it.
-function withStandIn(script, fn) {
+//
+// The stand-in reads its input first, as gitleaks does. It did not, and scanContent writes the
+// content to it: when the stand-in had gone before the write, the wrapper got EPIPE and the test
+// failed on "gitleaks failed to run: spawnSync gitleaks EPIPE". Measured at 0e211e4, 400 runs of
+// this child, 12 at a time: 6 on macOS, and 195 in a node:22 container on Linux (1 of 300 one at a
+// time). `reads: false` is for the tests of exactly that, and `content` is the JavaScript for what
+// scanContent is given.
+const MORE_THAN_A_PIPE_HOLDS = '"x = 1\\n".repeat(200000)';
+function withStandIn(script, fn, { reads = true, content = '"x = 1\\n"' } = {}) {
   const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "secret-guard-standin-")));
   try {
-    writeFileSync(path.join(dir, "gitleaks"), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+    writeFileSync(path.join(dir, "gitleaks"), `#!/bin/sh\n${reads ? "cat > /dev/null\n" : ""}${script}\n`, { mode: 0o755 });
     mkdirSync(path.join(dir, "project"));
     writeFileSync(path.join(dir, "project", "ok.py"), "x = 1\n");
     const lib = pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "lib", "gitleaks.mjs")).href;
-    const code = `const { scanPath, scanContent } = await import(${JSON.stringify(lib)}); console.log(JSON.stringify([scanPath(${JSON.stringify(path.join(dir, "project"))}), scanContent("x = 1\\n")]));`;
+    const code = `const { scanPath, scanContent } = await import(${JSON.stringify(lib)}); console.log(JSON.stringify([scanPath(${JSON.stringify(path.join(dir, "project"))}), scanContent(${content})]));`;
     const r = spawnSync(process.execPath, ["--input-type=module", "-e", code], {
       encoding: "utf8",
       env: { ...process.env, PATH: `${dir}${path.delimiter}${process.env.PATH}` },
@@ -324,4 +332,65 @@ test("a scan that stopped before it finished is an error, though it wrote a repo
   withStandIn(`echo '[]'\nexit 0`, (results) => {
     assert.deepEqual(results, [{ ok: true, findings: [] }, { ok: true, findings: [] }]);
   });
+});
+
+// gitleaks ending before it has read the content it was given. The content is more than a pipe
+// holds, so the write cannot finish and the wrapper gets EPIPE every time, where with a few bytes
+// it is a race. At 0e211e4 each of these came back "gitleaks failed to run: spawnSync gitleaks
+// EPIPE": gitleaks' own reason was replaced, and so was a finding it had reported.
+test("gitleaks ending before it has read the content is said in its own words, and is never a clean scan", () => {
+  const early = { reads: false, content: MORE_THAN_A_PIPE_HOLDS };
+  // It says why and writes no report: a config it could not load does this.
+  const fatal = `echo '9:36AM FTL Failed to load config error="failed to load extended config, err: open not-there.toml: no such file or directory"' >&2\nexit 1`;
+  withStandIn(fatal, ([, content]) => {
+    assert.equal(content.ok, false);
+    assert.equal(
+      content.error,
+      'gitleaks produced no parseable output (exit 1). stderr: 9:36AM FTL Failed to load config error="failed to load extended config, err: open not-there.toml: no such file or directory"'
+    );
+  }, early);
+  // The same words when the content was small enough to be written before it went: what a caller
+  // is told does not depend on how much it handed over.
+  withStandIn(fatal, ([, content]) => {
+    assert.match(content.error, /^gitleaks produced no parseable output \(exit 1\)\. stderr: 9:36AM FTL Failed to load config /);
+  });
+  // It panics, which is how 8.30.1 ends on a rule whose regex does not compile: the first line is
+  // the reason, and the stack under it is not passed on.
+  withStandIn(`echo 'panic: regexp: Compile(\`(\`): error parsing regexp' >&2\necho >&2\necho 'goroutine 1 [running]:' >&2\nexit 2`, ([, content]) => {
+    assert.equal(content.ok, false);
+    assert.equal(content.error, "gitleaks produced no parseable output (exit 2). stderr: panic: regexp: Compile(`(`): error parsing regexp");
+  }, early);
+  // It reports no findings and exits 0, having read none of the content: not a clean scan.
+  withStandIn(`echo '[]'\nexit 0`, ([, content]) => {
+    assert.deepEqual(content, {
+      ok: false,
+      error: "not a clean scan: gitleaks ended before it had read all of the content",
+      findings: [],
+      skipped: [{ path: null, reason: "gitleaks ended before it had read all of the content" }],
+    });
+  }, early);
+  // It reports a finding: the finding stands, and that it stopped early is listed beside it.
+  withStandIn(`echo '[{"RuleID":"generic-api-key","StartLine":3,"EndLine":3,"Fingerprint":":generic-api-key:3"}]'\nexit 1`, ([, content]) => {
+    assert.equal(content.ok, true);
+    assert.deepEqual(content.findings.map((f) => [f.rule, f.startLine, f.secret]), [["generic-api-key", 3, "<redacted>"]]);
+    assert.deepEqual(content.skipped, [{ path: null, reason: "gitleaks ended before it had read all of the content" }]);
+  }, early);
+});
+
+test("the real gitleaks ending before it has read the content: its reason comes through", needsBinary, () => {
+  const t = tree({ "extends-nothing.toml": '[extend]\npath = "not-there.toml"\n', "bad-regex.toml": 'title = "x"\n[[rules]]\nid = "r"\nregex = "("\n' });
+  try {
+    const big = "x = 1\n".repeat(200000);
+    for (const content of [big, "x = 1\n"]) {
+      const missing = scanContent(content, { configPath: path.join(t.dir, "extends-nothing.toml") });
+      assert.equal(missing.ok, false);
+      assert.match(missing.error, /^gitleaks produced no parseable output \(exit 1\)\. stderr: .*not-there\.toml/);
+      const panics = scanContent(content, { configPath: path.join(t.dir, "bad-regex.toml") });
+      assert.equal(panics.ok, false);
+      assert.match(panics.error, /^gitleaks produced no parseable output \(exit 2\)\. stderr: panic: regexp: /);
+      assert.ok(!panics.error.includes("goroutine"), "the stack is not passed on");
+    }
+  } finally {
+    t.remove();
+  }
 });
