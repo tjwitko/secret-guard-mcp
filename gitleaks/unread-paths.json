@@ -1,0 +1,133 @@
+{
+  "schema": 1,
+  "gitleaks": "8.30.1",
+  "about": "What secret-guard's scan does not read, by path, for a caller that needs to know. Each pattern is a JavaScript regular expression, tested against a path with / as its separator. An entry from a config file is that file's pattern, with a leading (?i) as flags \"i\". The archive entry is in no config: gitleaks skips a file by its name alone when the name holds one of these endings (test/unread-paths.test.mjs holds it to what the binary does). Not on this list, because no name says it: a file whose first bytes are those of a binary format, whatever it is called.",
+  "entries": [
+    {
+      "kind": "rule-file",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)(?:[^/]*\\.)?gitleaks\\.toml$",
+      "flags": ""
+    },
+    {
+      "kind": "image",
+      "from": "default.gitleaks.toml",
+      "pattern": "\\.(?:bmp|gif|jpe?g|png|tiff?)$",
+      "flags": "i"
+    },
+    {
+      "kind": "font",
+      "from": "default.gitleaks.toml",
+      "pattern": "\\.(?:eot|[ot]tf|woff2?)$",
+      "flags": "i"
+    },
+    {
+      "kind": "binary",
+      "from": "default.gitleaks.toml",
+      "pattern": "\\.(?:docx?|xlsx?|pdf|vsidx|suo|wsuo|pdb|exe)$",
+      "flags": "i"
+    },
+    {
+      "kind": "go-vendor-list",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)vendor/modules\\.txt$",
+      "flags": ""
+    },
+    {
+      "kind": "go-vendor",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)vendor/(?:github\\.com|golang\\.org/x|google\\.golang\\.org|gopkg\\.in|istio\\.io|k8s\\.io|sigs\\.k8s\\.io)(?:/.*)?$",
+      "flags": ""
+    },
+    {
+      "kind": "node-modules",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)node_modules(?:/.*)?$",
+      "flags": ""
+    },
+    {
+      "kind": "bower-components",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)bower_components(?:/.*)?$",
+      "flags": ""
+    },
+    {
+      "kind": "virtualenv",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)(?:v?env|virtualenv)/lib(?:64)?(?:/.*)?$",
+      "flags": "i"
+    },
+    {
+      "kind": "python-lib",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)(?:lib(?:64)?/python[23](?:\\.\\d{1,2})+|python/[23](?:\\.\\d{1,2})+/lib(?:64)?)(?:/.*)?$",
+      "flags": "i"
+    },
+    {
+      "kind": "dist-info",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)[a-z0-9_.]+-[0-9.]+\\.dist-info(?:/.+)?$",
+      "flags": "i"
+    },
+    {
+      "kind": "ruby-vendor",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)vendor/(?:bundle|ruby)(?:/.*?)?$",
+      "flags": ""
+    },
+    {
+      "kind": "gem",
+      "from": "default.gitleaks.toml",
+      "pattern": "\\.gem$",
+      "flags": ""
+    },
+    {
+      "kind": "git",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)\\.git$",
+      "flags": ""
+    },
+    {
+      "kind": "terraform",
+      "from": "extra-rules.toml",
+      "pattern": "(^|/)\\.terraform/",
+      "flags": ""
+    },
+    {
+      "kind": "external-modules",
+      "from": "extra-rules.toml",
+      "pattern": "(^|/)\\.external_modules/",
+      "flags": ""
+    },
+    {
+      "kind": "node-modules-dir",
+      "from": "extra-rules.toml",
+      "pattern": "(^|/)node_modules/",
+      "flags": ""
+    },
+    {
+      "kind": "vendor",
+      "from": "extra-rules.toml",
+      "pattern": "(^|/)vendor/",
+      "flags": ""
+    },
+    {
+      "kind": "venv",
+      "from": "extra-rules.toml",
+      "pattern": "(^|/)\\.venv/",
+      "flags": ""
+    },
+    {
+      "kind": "pycache",
+      "from": "extra-rules.toml",
+      "pattern": "(^|/)__pycache__/",
+      "flags": ""
+    },
+    {
+      "kind": "archive",
+      "from": "gitleaks' archive detection",
+      "pattern": "(?:^|/)[^/]*\\.(?:(?:7z|br|bz2|gz|lz4|rar|s2|sz|tar|xz|z[i\\u0130]p|zst|zz)[^/]*|lz|mz)$",
+      "flags": "i"
+    }
+  ]
+}

@@ -38,6 +38,24 @@ keywords = ["://"]
     '''(?i)^(password|pass|passwd|pwd|secret|changeme|example|placeholder|your[_-]?password|xxx+|\*+|<[^>]+>|\$\{[^}]+\}|\$\([^)]+\)|%[^%]+%|REPLACE[_A-Z]*)$''',
   ]
 
+# go.sum is read, for what can be recognised in it. Its lines are "<module> <version> h1:<hash>", and
+# generic-api-key reads a module named for a keyword (oauth2, token, kin-openapi) as a key whose value
+# is the hash: seven findings on one real project's go.sum, every one false. This drops that rule's
+# finding on a line of exactly that shape in a file of that name, and nothing else. Every other rule
+# still reads the line, and a line of any other shape in go.sum still goes to generic-api-key, so a
+# password written there is reported. What it cannot see: a value of 43 base64 characters and "="
+# written in the place of a hash, which is what a hash looks like. Named for go.work.sum too, which
+# has the same format.
+[[rules]]
+id = "generic-api-key"
+
+  [[rules.allowlists]]
+  description = "A go.sum line: module, version, h1 hash"
+  condition = "AND"
+  paths = ['''(?:^|/)go\.(?:work\.)?sum$''']
+  regexTarget = "line"
+  regexes = ['''^\s*[A-Za-z0-9._~/+-]+ v[0-9][0-9A-Za-z.+-]*(?:/go\.mod)? h1:[A-Za-z0-9+/]{43}=\s*$''']
+
 # Vendored dependency trees are not the caller's code, and a finding in one is unactionable:
 # you cannot fix a credential inside terraform-aws-modules' example configs or inside a package
 # in node_modules. This is not hypothetical -- a real agent run had its commit rejected four

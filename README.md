@@ -149,7 +149,8 @@ off, and then it protects nothing.
 
 The ~170 default rules are gitleaks' own, but they are read from a copy in this repository,
 `gitleaks/default.gitleaks.toml`, and not from the ones built into the binary. The copy is
-gitleaks 8.30.1's `config/gitleaks.toml` with **one line changed**.
+gitleaks 8.30.1's `config/gitleaks.toml` with **two changes**: one regex anchored, and a shorter path
+allowlist ([below](#what-is-read-and-what-is-not)).
 
 gitleaks' default allowlist holds the regex `(?i)^true|false|null$`. It was written to dismiss a
 "secret" that is the literal `true`, `false` or `null`. By precedence it means *starts with
@@ -167,7 +168,33 @@ extends the built-in defaults cannot take an allowlist entry out, which is why t
 
 The cost is that rules no longer arrive with a gitleaks upgrade. The top of the file says how to
 take a newer release's, and a test fails when the installed gitleaks is not the release the copy
-came from, or when the copy differs from that release's file in anything but that line.
+came from, or when the copy differs from that release's file in anything but the changes it lists.
+
+### What is read and what is not
+
+gitleaks' default path allowlist skipped text a person writes or a tool generates, so a key in
+`go.sum`, in a comment in an `.svg`, or in a file called `bootstrap.js` was never seen. Those are read
+now: lockfiles, `go.mod`, `go.sum`, `go.work`, `.svg`, the gradle and maven wrappers, any `.js` named
+for a library, `javascript.json`, `verification-metadata.xml`, `.refactorlog`, `.gltf`, `.socket`,
+`.bin`, `.v2` and `.dll` (a real DLL is still skipped, by its first bytes).
+
+Still not read: third-party trees (`node_modules`, `bower_components`, `vendor/`, virtualenvs,
+`site-packages` paths, `.dist-info`), images, fonts, Office files, PDFs, `.exe` and Visual Studio's binary files, gems, rule
+files named `gitleaks.toml` or `*.gitleaks.toml`, and archives.
+
+[`gitleaks/unread-paths.json`](gitleaks/unread-paths.json) lists all of it as JavaScript regular
+expressions, for a caller that blocks a write where the scan does not look. A test holds the list to
+the two config files and to what the binary does, in both directions.
+
+- **Archives go by name, and the name need only hold the ending.** gitleaks treats any file whose name
+  contains `.zip`, `.tar`, `.gz`, `.br`, `.bz2`, `.xz`, `.7z`, `.rar`, `.lz4`, `.sz`, `.s2`, `.zst` or `.zz`,
+  or ends in `.lz` or `.mz`, as an archive and skips it. So `app.browser.js`, `deploy.target.yaml` and
+  `messages.pt.br.json` are not read, and they are on the list.
+- **`go.sum` has one narrow rule.** `generic-api-key` read a module named for a keyword (`oauth2`,
+  `token`) as a key whose value is the hash. That rule, and only that rule, skips a line of exactly the
+  form `<module> <version> h1:<hash>` in a file named `go.sum` or `go.work.sum`. An AWS key ID, a GitHub
+  token or a private key there is reported, and so is a password on a line of any other shape. A value
+  of 43 base64 characters and `=`, written where a hash goes, is not: it looks like a hash.
 
 ---
 
@@ -210,9 +237,10 @@ Only `PATH`, `HOME`, `SCAN_ROOT` and `SECRET_GUARD_CONFIG` survive startup. Ever
   `.gitleaksignore` in the directory the caller is in, which through v1.0.3 could silence it with a
   `:<rule>:<line>` entry; the only one read now is one beside the config in use.
 - **Working tree only.** `scan_path` does not scan git history.
-- **What gitleaks leaves unread by design is not reported as skipped:** archives (`.zip`, `.gz`,
-  `.tar`, `.7z`), files whose first bytes are a binary format, empty files, symlinks, and the paths
-  on its allowlist. Nor is a file it could not open for a reason other than permission, which it
+- **What gitleaks leaves unread by design is not reported as skipped:** archives, files whose first
+  bytes are a binary format, empty files, symlinks, and the paths on its allowlist
+  ([listed](#what-is-read-and-what-is-not), except the first-bytes case, which no name can say: text
+  that begins `%PDF-` is not read under any name). Nor is a file it could not open for a reason other than permission, which it
   passes without a word at any log level.
 - **Detection is not the real fix.** The best protection is having no static credential to leak —
   workload identity, IRSA, short-lived STS credentials.

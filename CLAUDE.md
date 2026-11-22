@@ -18,11 +18,15 @@ Requires `gitleaks` on `PATH` (`brew install gitleaks`).
 - `lib/paths.mjs` — `resolveScanPath()`, `SCAN_ROOT` containment
 - `gitleaks/extra-rules.toml` — `[extend] path = "default.gitleaks.toml"` plus the connection-string rule
 - `gitleaks/default.gitleaks.toml` — gitleaks 8.30.1's default config with one allowlist regex
-  anchored; its top says which, why, and how to take a newer release's
+  anchored and a shorter path allowlist; its top says what, why, and how to take a newer release's
+- `gitleaks/unread-paths.json` — what the scan does not read by path, as JavaScript regular
+  expressions, for a caller that must know. `test/unread-paths.test.mjs` holds it to the config files
+  and to the binary. Change a path entry and this file together
 - `test/gitleaks.test.mjs` — 18 tests, `test/paths.test.mjs` 5 more over a real tree of files
   and symlinks, `test/default-rules.test.mjs` 7 on the default rules and on scans that did not
-  run, and `test/skipped.test.mjs` 11 on trees and content gitleaks did not read all of. The
-  gitleaks-dependent ones skip when it is not installed, which is 27 of the 41:
+  run, `test/skipped.test.mjs` 11 on trees and content gitleaks did not read all of, and
+  `test/unread-paths.test.mjs` 5 on what is read by path. The gitleaks-dependent ones skip when it is
+  not installed:
   correct locally, and worthless in CI, where the job would be green having
   verified the normalisation helpers and nothing about detection. `.github/workflows/test.yml`
   installs a pinned gitleaks and fails the job if any test was skipped at all.
@@ -48,7 +52,7 @@ gitleaks version                # confirm the prerequisite
   `default.gitleaks.toml` is upstream's file with that regex anchored. Upstream:
   gitleaks/gitleaks#2293. Two consequences. Rules no longer arrive with a gitleaks upgrade:
   re-vendor as the top of the file describes, and `test/default-rules.test.mjs` fails when the
-  binary and the copy have parted or the copy differs from upstream in anything else. And the
+  binary and the copy have parted or the copy differs from upstream in anything it does not list. And the
   file is named `*.gitleaks.toml` because its own allowlist skips that path; under another name
   gitleaks flags one of its rule regexes in it.
 - **gitleaks is started in the config's directory.** It reads `[extend] path` relative to where
