@@ -15,6 +15,8 @@ Requires `gitleaks` on `PATH` (`brew install gitleaks`).
 
 - `index.mjs` — env sanitization, the two tools
 - `lib/gitleaks.mjs` — spawn wrappers, `normalizeFindings()` (the redaction layer), `REMEDIATION`
+- `lib/gitleaks-log.mjs`, `lib/gitleaks-run.mjs` — reading gitleaks' log line by line, and the process
+  that does it for a tree
 - `lib/paths.mjs` — `resolveScanPath()`, `SCAN_ROOT` containment
 - `gitleaks/extra-rules.toml` — `[extend] path = "default.gitleaks.toml"` plus the connection-string rule
 - `gitleaks/default.gitleaks.toml` — gitleaks 8.30.1's default config with one allowlist regex
@@ -25,7 +27,7 @@ Requires `gitleaks` on `PATH` (`brew install gitleaks`).
 - `test/gitleaks.test.mjs` — 18 tests, `test/paths.test.mjs` 5 more over a real tree of files
   and symlinks, `test/default-rules.test.mjs` 7 on the default rules and on scans that did not
   run, `test/skipped.test.mjs` 11 on trees and content gitleaks did not read all of, and
-  `test/unread-paths.test.mjs` 13 on what is read by path and what a scan says it left unread. The gitleaks-dependent ones skip when it is
+  `test/unread-paths.test.mjs` 15 on what is read by path and what a scan says it left unread. The gitleaks-dependent ones skip when it is
   not installed:
   correct locally, and worthless in CI, where the job would be green having
   verified the normalisation helpers and nothing about detection. `.github/workflows/test.yml`
@@ -84,6 +86,14 @@ gitleaks version                # confirm the prerequisite
   whole path. `trace` is the only level that names an archive, and on the calibration projects it is
   3.5 times the log with 15,595 lines holding a candidate value. `debug` holds a value only for a finding
   a `.gitleaksignore` dropped. Never pass stderr on.
+- **A tree's log is read as a stream, in a process of its own (`lib/gitleaks-run.mjs`).** `spawnSync` holds
+  a child's whole output, and at `debug` that grows with the tree: 330,000 small `.png` files were
+  ENOBUFS, from a tree v1.0.4 called clean. `scanPath` is synchronous, so it starts that process, which
+  keeps only warnings, errors, a count of what was left unread, and the entries for the paths a caller
+  named (`unread_of`). Not a list of the whole tree: at 122 MB it closed the MCP SDK client, which reads
+  10 MB in one message. `LIMITS` in `lib/gitleaks-log.mjs` holds what stays bounded, and reaching one is an error
+  that names it. No temporary file for the log: a debug line can hold a value, and a full disk would
+  lose lines silently.
 - **EPIPE from `spawnSync` is gitleaks ending early, not a failure to run it.** `scanContent`
   writes the content to gitleaks' stdin, and a gitleaks that ends first (a config it cannot load,
   a panic on a rule's regex) leaves that write with EPIPE. The exit code, report and log are still

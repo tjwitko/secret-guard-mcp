@@ -110,9 +110,11 @@ the whole path: a checkout at `.../vendor/app` or `.../env/lib/app` used to read
 clean.
 
 **In a tree, what is left unread by design is reported and the scan stays complete.** The report has
-`unreadCount`, and with `list_unread: true` an `unread` list of `{ path, kind }`: `directory` and
+`unreadCount`, and for the paths named in `unread_of` an `unread` list of `{ path, kind }`: `directory` and
 `file` for the path allowlist, `first-bytes` (with `mime`) for the rest. It comes from gitleaks' log at
-`debug`. Archives are not in it, because gitleaks names them only at `trace`, which also logs candidate
+`debug`, read as it is written, so a tree's size cannot overflow it. The count has no cap. The entries
+for the paths asked about are capped at 8 MB, under the 10 MB an MCP client reads in one message, and
+reaching that is an error that says so. Archives are not in it, because gitleaks names them only at `trace`, which also logs candidate
 values; they go by name alone, so the `archive` entry of `gitleaks/unread-paths.json` is exact for them.
 
 ---

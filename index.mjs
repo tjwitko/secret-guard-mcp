@@ -54,10 +54,10 @@ function scanError(result, extra) {
 // `skipped` is there only beside findings: what gitleaks did not read, with what it found in the
 // rest. With no findings a scan that skipped something is not reported at all, it is an error.
 //
-// `unreadCount` is how many paths gitleaks left unread by design. The paths themselves are there
-// only when the caller asks (`list_unread`): a tree can hold thousands of images, and this report
-// usually lands in a model's context.
-function report(findings, extra, skipped, unread, listUnread) {
+// `unreadCount` is how many paths gitleaks left unread by design. `unread` is there only for the
+// paths the caller asked about (`unread_of`): a tree can hold hundreds of thousands of images, this
+// report usually lands in a model's context, and an MCP client reads 10 MB in one message.
+function report(findings, extra, skipped, { unreadCount, unread } = {}) {
   const body = {
     ...extra,
     clean: findings.length === 0,
@@ -65,8 +65,8 @@ function report(findings, extra, skipped, unread, listUnread) {
     findings,
     ...(skipped?.length ? { skipped } : {}),
     ...(findings.length ? { remediation: REMEDIATION } : {}),
-    ...(unread?.length ? { unreadCount: unread.length } : {}),
-    ...(listUnread ? { unread: unread || [] } : {}),
+    ...(unreadCount ? { unreadCount } : {}),
+    ...(unread ? { unread } : {}),
   };
   return { content: [{ type: "text", text: JSON.stringify(body, null, 2) }] };
 }
@@ -86,16 +86,17 @@ server.tool(
         "File or directory to scan, relative to this server's working directory or absolute " +
           "within it. Directories are scanned recursively."
       ),
-    list_unread: z
-      .boolean()
+    unread_of: z
+      .array(z.string())
       .optional()
       .describe(
-        "Also return `unread`: each path the scan left unread by design (allowlisted paths, and " +
-          "files skipped for their first bytes), for a caller that blocks a write there. Archives " +
-          "are not in it; gitleaks/unread-paths.json names them."
+        "Paths under the target, for a caller that blocks a write where the scan does not look. " +
+          "The report's `unread` then says which of them the scan left unread by design (the path " +
+          "allowlist, and files skipped for their first bytes). Archives are not in it; " +
+          "gitleaks/unread-paths.json names them."
       ),
   },
-  async ({ target, list_unread }) => {
+  async ({ target, unread_of }) => {
     let resolved;
     try {
       resolved = resolveScanPath(target, SCAN_ROOT);
@@ -105,10 +106,10 @@ server.tool(
 
     if (!checkGitleaksInstalled()) return notInstalled();
 
-    const result = scanPath(resolved, { configPath: CONFIG_PATH });
-    if (!result.ok) return scanError(result, { target: resolved, ...(list_unread ? { unread: result.unread || [] } : {}) });
+    const result = scanPath(resolved, { configPath: CONFIG_PATH, unreadOf: unread_of });
+    if (!result.ok) return scanError(result, { target: resolved, ...(result.unread ? { unread: result.unread } : {}) });
 
-    return report(result.findings, { target: resolved }, result.skipped, result.unread, Boolean(list_unread));
+    return report(result.findings, { target: resolved }, result.skipped, result);
   }
 );
 

@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash, createPrivateKey } from "crypto";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { spawnSync } from "child_process";
 import { tmpdir } from "os";
 import path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -287,7 +288,10 @@ test("in a tree, what is left unread by design is reported, and the scan is comp
     mkdirSync(path.join(dir, "fonts.ttf"));
     writeFileSync(path.join(dir, "fonts.ttf", "a.css"), `/* ${githubToken("dir")} */\n`);
     writeFileSync(path.join(dir, "plain.js"), `// ${githubToken("plain")}\n`);
-    const r = scanPath(dir);
+    assert.equal(scanPath(dir).unread, undefined, "the entries are there for paths a caller names");
+    assert.equal(scanPath(dir).unreadCount, 3);
+    assert.deepEqual(scanPath(dir, { unreadOf: ["plain.js"] }).unread, [], "and only for those");
+    const r = scanPath(dir, { unreadOf: ["settings.env", "logo.png", "fonts.ttf/a.css", "plain.js"] });
     assert.ok(r.ok, r.error);
     assert.equal(r.skipped, undefined, "not an incomplete scan");
     assert.deepEqual(r.findings.map((f) => path.basename(f.file)), ["plain.js"]);
@@ -379,7 +383,7 @@ test("the server gives the count, and the paths only when asked", needsBinary, a
     assert.equal(plain.clean, true);
     assert.equal(plain.unreadCount, 1);
     assert.equal(plain.unread, undefined);
-    const listed = JSON.parse((await client.callTool({ name: "scan_path", arguments: { target: ".", list_unread: true } })).content[0].text);
+    const listed = JSON.parse((await client.callTool({ name: "scan_path", arguments: { target: ".", unread_of: ["logo.png", "a.js"] } })).content[0].text);
     assert.deepEqual(listed.unread, [{ path: path.join(dir, "logo.png"), kind: "file" }]);
     const content = await client.callTool({ name: "scan_content", arguments: { content: `MZ_REGION=maputo\n${githubToken("server")}\n` } });
     assert.equal(content.isError, true);
@@ -388,4 +392,62 @@ test("the server gives the count, and the paths only when asked", needsBinary, a
     await client.close();
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// The log at "debug" grows with the tree, and spawnSync holds a child's whole output: 330,000 one-byte
+// .png files with paths of about 220 characters came back "spawnSync gitleaks ENOBUFS" at 46d9779,
+// from a tree v1.0.4 called clean. A stand-in prints that much log, so the test needs no such tree.
+function withLoudGitleaks(script, call) {
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "secret-guard-loud-")));
+  try {
+    writeFileSync(path.join(dir, "gitleaks"), `#!/bin/sh\ncat > /dev/null\n${script}\n`, { mode: 0o755 });
+    mkdirSync(path.join(dir, "project"));
+    writeFileSync(path.join(dir, "project", "ok.py"), "x = 1\n");
+    const lib = pathToFileURL(path.join(HERE, "..", "lib", "gitleaks.mjs")).href;
+    const code = `const { scanPath, scanContent } = await import(${JSON.stringify(lib)});
+      const target = ${JSON.stringify(path.join(dir, "project"))};
+      const r = ${call};
+      console.log(JSON.stringify({ ok: r.ok, error: r.error, findings: r.findings?.length, unreadCount: r.unreadCount, listed: r.unread?.length, skipped: r.skipped?.length }));`;
+    const r = spawnSync(process.execPath, ["--input-type=module", "-e", code], {
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${dir}${path.delimiter}${process.env.PATH}` },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    return JSON.parse(r.stdout);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+const MANY_LINES = 1_200_000; // about 70 MB of log, past the 50 MB spawnSync was given
+const manyUnread = `yes '9:36AM DBG skipping file: global allowlist path=/p/a/logo.png' | head -n ${MANY_LINES} >&2\necho '[]'`;
+
+test("a tree's log cannot overflow: the scan is clean and counts what it left unread", () => {
+  assert.deepEqual(withLoudGitleaks(manyUnread, "scanPath(target)"), { ok: true, findings: 0, unreadCount: MANY_LINES });
+  // Asked about one path: its entry is kept, and the million others are not.
+  const oneHit = `echo "9:36AM DBG skipping file: global allowlist path=$2/logo.png" >&2\n${manyUnread}`;
+  assert.deepEqual(withLoudGitleaks(oneHit, 'scanPath(target, { unreadOf: ["logo.png"] })'), { ok: true, findings: 0, unreadCount: MANY_LINES + 1, listed: 1 });
+  // Debug lines that say nothing the wrapper reads are dropped too.
+  assert.deepEqual(withLoudGitleaks(`yes '9:36AM DBG skipping empty file path=/p/a' | head -n ${MANY_LINES} >&2\necho '[]'`, "scanPath(target)"), { ok: true, findings: 0 });
+});
+
+test("a ceiling that is reached is an error that names it and what to do", () => {
+  // Past what one reply can carry: an error only for the caller who asked about those paths.
+  const repeated = `yes "9:36AM DBG skipping file: global allowlist path=$2/logo.png" | head -n 300000 >&2\necho '[]'`;
+  const asked = withLoudGitleaks(repeated, 'scanPath(target, { unreadOf: ["logo.png"] })');
+  assert.equal(asked.ok, false);
+  assert.match(asked.error, /^not a clean scan: the unread paths asked about passed the 8 MB one reply can carry.*Ask about fewer paths/);
+  assert.deepEqual(withLoudGitleaks(repeated, "scanPath(target)"), { ok: true, findings: 0, unreadCount: 300000 });
+
+  const report = withLoudGitleaks("head -c 60000000 /dev/zero | tr '\\0' ' '", "scanPath(target)");
+  assert.equal(report.ok, false);
+  assert.match(report.error, /^gitleaks' report passed the 50 MB a scan holds.*Scan a smaller directory/);
+
+  const warnings = `yes '9:36AM WRN skipping file: permission denied path=/p/x' | head -n ${MANY_LINES} >&2\necho '[]'`;
+  const warned = withLoudGitleaks(warnings, "scanPath(target)");
+  assert.equal(warned.ok, false);
+  assert.match(warned.error, /gitleaks' warnings about what it could not read passed the 50 MB a scan holds.*Scan a smaller directory/);
+
+  const content = withLoudGitleaks(warnings, 'scanContent("x = 1\\n")');
+  assert.equal(content.ok, false);
+  assert.match(content.error, /^gitleaks' output on this content passed the 50 MB a scan holds.*smaller parts/);
 });
