@@ -6,7 +6,10 @@ import { tmpdir } from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { checkGitleaksInstalled, scanPath } from "../lib/gitleaks.mjs";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
+import { checkGitleaksInstalled, leftUnread, scanContent, scanPath } from "../lib/gitleaks.mjs";
 
 // What the scan leaves unread by path, and that gitleaks/unread-paths.json says so. A caller that
 // blocks a write where the scan does not look reads that file instead of parsing Go regular
@@ -18,7 +21,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const GITLEAKS = path.join(HERE, "..", "gitleaks");
 const LIST = JSON.parse(readFileSync(path.join(GITLEAKS, "unread-paths.json"), "utf8"));
 const compiled = LIST.entries.map((e) => ({ ...e, re: new RegExp(e.pattern, e.flags) }));
-const listedUnread = (rel) => compiled.some((e) => e.re.test(rel));
+// As the file's "about" says: the whole path against every entry, its parent directories against
+// those that apply to directories.
+const parents = (rel) => rel.split("/").slice(0, -1).map((_, i, all) => all.slice(0, i + 1).join("/"));
+const listedUnread = (rel) => compiled.some((e) => e.re.test(rel) || (e.directories && parents(rel).some((d) => e.re.test(d))));
 
 const needsBinary = { skip: checkGitleaksInstalled() ? false : "gitleaks not installed" };
 
@@ -110,7 +116,7 @@ test("the list is every path pattern in the two config files, as they are writte
     const block = /paths = \[([\s\S]*?)\n\]/.exec(text.slice(text.search(new RegExp(`^\\[${heading}\\]`, "m"))));
     return [...block[1].matchAll(/'''(.+?)'''/g)].map((m) => m[1]);
   };
-  const go = (e) => `${e.flags === "i" ? "(?i)" : ""}${e.pattern}`;
+  const go = (e) => (e.flags === "iu" ? `(?i:${e.pattern})` : e.pattern);
   const from = (name) => LIST.entries.filter((e) => e.from === name).map(go);
   assert.deepEqual(from("default.gitleaks.toml"), paths("default.gitleaks.toml", "allowlist"));
   assert.deepEqual(from("extra-rules.toml"), paths("extra-rules.toml", "allowlist"));
@@ -118,6 +124,8 @@ test("the list is every path pattern in the two config files, as they are writte
   assert.ok(LIST.entries.some((e) => e.kind === "archive"), "which is archives");
   assert.equal(new Set(LIST.entries.map((e) => e.kind)).size, LIST.entries.length, "kinds are unique");
   assert.deepEqual(Object.keys(UNREAD).sort(), LIST.entries.map((e) => e.kind).sort(), "every kind has a name below");
+  assert.deepEqual(LIST.entries.filter((e) => !e.directories).map((e) => e.kind), ["archive"], "only the archive entry goes by a file's own name");
+  assert.deepEqual([...new Set(LIST.entries.filter((e) => e.from.endsWith(".toml")).map((e) => e.flags))].sort(), ["", "iu"], "a config's (?i) is iu here");
 });
 
 test("each kind on the list is in fact unread, and the list says so of it", needsBinary, () => {
@@ -169,21 +177,215 @@ test("go.sum: its hash lines are not keys, and a credential in it is reported", 
   assert.deepEqual(scanGoSum(`github.com/a/token v1.0.0 h1:${password}\n`), ["generic-api-key"], "a value not of a hash's length");
 });
 
-// Not on the list, because no name says it: gitleaks looks at a file's first bytes as well. Held
-// here so that the README's sentence about it stays true, and is noticed if a release changes it.
-test("text that begins with a binary format's first bytes is not read under any name", needsBinary, () => {
-  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "secret-guard-magic-")));
+/** Each name alone in a directory, because a case-folding disk (macOS) holds a.suo and a.\u017fuo as one file. */
+function readAlone(name) {
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "secret-guard-alone-")));
   try {
-    writeFileSync(path.join(dir, "config.js"), `%PDF-1.7\n// ${githubToken("magic")}\n`);
-    // What a real DLL begins with, which is why .dll need not be on the list.
-    writeFileSync(path.join(dir, "real.dll"), Buffer.concat([Buffer.from("MZ"), Buffer.alloc(62), Buffer.from(`\n// ${githubToken("dll")}\n`)]));
-    writeFileSync(path.join(dir, "plain.js"), `// ${githubToken("plain")}\n`);
-    assert.ok(!listedUnread("config.js"));
-    assert.ok(!listedUnread("real.dll"));
+    mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+    writeFileSync(path.join(dir, name), `deploy token: ${githubToken(name)}\n`);
+    writeFileSync(path.join(dir, "control.js"), `deploy token: ${githubToken("control")}\n`);
     const r = scanPath(dir);
     assert.ok(r.ok, r.error);
-    assert.deepEqual(r.findings.map((f) => path.basename(f.file)), ["plain.js"]);
+    const files = r.findings.map((f) => path.basename(f.file));
+    assert.ok(files.includes("control.js"), `${name}: the file beside it is read`);
+    return r.findings.length === 2;
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("a directory named like an unread file is not gone into, and the list says so; an archive's name is not a directory's", needsBinary, () => {
+  for (const n of ["logo.png/config.js", "docs.pdf/notes.md", "fonts.ttf/a.css", "pkg.gem/lib/x.rb", "tool.exe/run.sh", "a.docx/b.txt", "x.gitleaks.toml/y.js", "img.JPG/z.yaml", "a.suo/b.env", "deep/er/logo.png/x/y.js"]) {
+    assert.equal(readAlone(n), false, `${n} was read`);
+    assert.ok(listedUnread(n), `${n} is not listed`);
+  }
+  for (const n of ["x.gz/inner.js", "data.zip/a.js", "a.br/b.yaml", "x.tar/y/z.py"]) {
+    assert.equal(readAlone(n), true, `${n} was not read`);
+    assert.ok(!listedUnread(n), `${n} is listed`);
+  }
+});
+
+test("an entry's letter case is its own: a (?i) does not reach the entries after it", needsBinary, () => {
+  for (const n of ["X.GEM", "a.Gem", "NODE_MODULES/x.js", "Node_Modules/x.js", "Bower_Components/x.js", "VENDOR/MODULES.TXT", "Vendor/Github.com/x/y.go", "Vendor/Bundle/x.rb", "GITLEAKS.TOML", ".TERRAFORM/x.tf", "Vendor/a.js"]) {
+    assert.equal(readAlone(n), true, `${n} was not read`);
+    assert.ok(!listedUnread(n), `${n} is listed`);
+  }
+  for (const n of ["A.PNG", "a.Pdf", "ENV/LIB/x.py", "Lib/Python3.11/x.py", "PKG-1.2.DIST-INFO/RECORD"]) {
+    assert.equal(readAlone(n), false, `${n} was read`);
+    assert.ok(listedUnread(n), `${n} is not listed`);
+  }
+});
+
+test("the list folds case as Go does: U+017F is s and U+212A is k, in a config's entries and not in the archive's", needsBinary, () => {
+  for (const n of ["a.xl\u017fx", "a.\u017fuo", "a.w\u017fuo", "a.v\u017fidx", "pkg-1.2.di\u017ft-info/RECORD", "pkg\u212a-1.2.dist-info/RECORD"]) {
+    assert.equal(readAlone(n), false, `${JSON.stringify(n)} was read`);
+    assert.ok(listedUnread(n), `${JSON.stringify(n)} is not listed`);
+  }
+  // gitleaks compares an archive's name after ToLower, which leaves U+017F as it is.
+  for (const n of ["a.\u017fz", "a.\u017f2", "a.z\u017ft"]) {
+    assert.equal(readAlone(n), true, `${JSON.stringify(n)} was not read`);
+    assert.ok(!listedUnread(n), `${JSON.stringify(n)} is listed`);
+  }
+});
+
+// Not on the list, because no name says it: gitleaks looks at a file's first bytes as well, and
+// says so in its log. Two ordinary letters are enough.
+const SKIPPED_HEADS = {
+  "MZ, as a setting": "MZ_REGION=maputo\n",
+  "%PDF": "%PDF-1.7\n",
+  "%!PS": "%!PS-Adobe-3.0\n",
+  zip: "PK\x03\x04\n",
+  "7z": Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0x0a]),
+  gzip: Buffer.from([0x1f, 0x8b, 0x08, 0x0a]),
+  SQLite: "SQLite format 3\0\n",
+  ELF: Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x0a]),
+  "rar, the whole signature": "Rar!\x1a\x07\x00\n",
+};
+const READ_HEADS = { BM: "BM\n", GIF: "GIF89a\n", "Rar! alone": "Rar!\n", ID3: "ID3\n", OggS: "OggS\n", wOFF: "wOFF\n", "a leading NUL": "\0\n", text: "# settings\n" };
+const withHead = (head, what) => Buffer.concat([Buffer.from(head, typeof head === "string" ? "latin1" : undefined), Buffer.from(`deploy token: ${githubToken(what)}\n`)]);
+
+function inDir(fn) {
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "secret-guard-heads-")));
+  try {
+    return fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("handed one file or content that gitleaks skips for its first bytes, the scan is an error and not clean", needsBinary, () => {
+  for (const [what, head] of Object.entries(SKIPPED_HEADS)) {
+    const body = withHead(head, what);
+    inDir((dir) => {
+      const file = path.join(dir, "settings.env");
+      writeFileSync(file, body);
+      assert.ok(!listedUnread("settings.env"));
+      const one = scanPath(file);
+      assert.equal(one.ok, false, `${what}: scan_path of the file`);
+      assert.match(one.error, /^not a clean scan: .*first bytes/, what);
+      assert.deepEqual(one.findings, []);
+      assert.equal(one.skipped[0].path, file);
+    });
+    const content = scanContent(body);
+    assert.equal(content.ok, false, `${what}: scan_content`);
+    assert.match(content.error, /^not a clean scan: .*first bytes/, what);
+  }
+  for (const [what, head] of Object.entries(READ_HEADS)) {
+    const body = withHead(head, what);
+    inDir((dir) => {
+      writeFileSync(path.join(dir, "settings.env"), body);
+      assert.deepEqual(scanPath(path.join(dir, "settings.env")).findings.map((f) => f.rule), ["github-pat"], `${what}: scan_path`);
+    });
+    assert.deepEqual(scanContent(body).findings.map((f) => f.rule), ["github-pat"], `${what}: scan_content`);
+  }
+});
+
+test("in a tree, what is left unread by design is reported, and the scan is complete", needsBinary, () => {
+  inDir((dir) => {
+    writeFileSync(path.join(dir, "settings.env"), withHead("MZ_REGION=maputo\n", "tree"));
+    writeFileSync(path.join(dir, "logo.png"), `token: ${githubToken("png")}\n`);
+    mkdirSync(path.join(dir, "fonts.ttf"));
+    writeFileSync(path.join(dir, "fonts.ttf", "a.css"), `/* ${githubToken("dir")} */\n`);
+    writeFileSync(path.join(dir, "plain.js"), `// ${githubToken("plain")}\n`);
+    const r = scanPath(dir);
+    assert.ok(r.ok, r.error);
+    assert.equal(r.skipped, undefined, "not an incomplete scan");
+    assert.deepEqual(r.findings.map((f) => path.basename(f.file)), ["plain.js"]);
+    const by = Object.fromEntries(r.unread.map((u) => [path.relative(dir, u.path), u]));
+    assert.deepEqual(Object.keys(by).sort(), ["fonts.ttf", "logo.png", "settings.env"]);
+    assert.equal(by["logo.png"].kind, "file");
+    assert.equal(by["fonts.ttf"].kind, "directory");
+    assert.equal(by["settings.env"].kind, "first-bytes");
+    assert.equal(by["settings.env"].mime, "application/vnd.microsoft.portable-executable");
+    assert.ok(!JSON.stringify(r).includes(githubToken("tree")), "and the report holds no value");
+  });
+});
+
+test("a target that is itself unread is an error: a file by name, or a directory the walk would not enter", needsBinary, () => {
+  inDir((dir) => {
+    for (const n of ["logo.png", "data.zip", "app.browser.js", "a.gem"]) {
+      writeFileSync(path.join(dir, n), `token: ${githubToken(n)}\n`);
+      const r = scanPath(path.join(dir, n));
+      assert.equal(r.ok, false, n);
+      assert.match(r.error, /not a clean scan/, n);
+    }
+    for (const sub of ["vendor/app", "a/node_modules/app", "env/lib/app", "vendor", "b/.venv"]) {
+      const t = path.join(dir, sub);
+      mkdirSync(t, { recursive: true });
+      writeFileSync(path.join(t, "config.js"), `token: ${githubToken(sub)}\n`);
+      const r = scanPath(t);
+      assert.equal(r.ok, false, `${sub}: ${JSON.stringify(r)}`);
+      assert.equal(r.skipped.at(-1).path, t, sub);
+    }
+    // Not the parent's name: the walk tests the path it starts from, and this one does not match.
+    const parent = path.join(dir, "x.png", "app");
+    mkdirSync(parent, { recursive: true });
+    writeFileSync(path.join(parent, "config.js"), `token: ${githubToken("parent")}\n`);
+    assert.deepEqual(scanPath(parent).findings.map((f) => f.rule), ["github-pat"]);
+    // An empty file was read, and held nothing.
+    writeFileSync(path.join(dir, "empty.js"), "");
+    assert.deepEqual(scanPath(path.join(dir, "empty.js")), { ok: true, findings: [] });
+  });
+});
+
+test("leftUnread reads only gitleaks' own lines, and a name or a value cannot write one", () => {
+  const lines = [
+    "5:04PM DBG skipping directory: global allowlist path=/p/a.pdf",
+    "5:04PM DBG skipping file: global allowlist path=/p/logo.png",
+    '5:04PM DBG skipping file: global allowlist path="/p/my logo\\n\\u017f\\x01.png"',
+    "5:04PM DBG skipping binary file mime_type=application/pdf path=/p/s.env",
+    "5:04PM DBG skipping binary file mime_type=application/pdf path=",
+    '5:04PM DBG skipping finding: global fingerprint finding="skipping file: global allowlist path=/forged" fingerprint=x',
+    '5:04PM TRC skipping file: global allowlist path=/trace-level',
+    '5:04PM DBG scanning path="5:04PM DBG skipping file: global allowlist path=/forged"',
+    "not a log line skipping file: global allowlist path=/forged",
+  ].join("\n");
+  assert.deepEqual(leftUnread(lines), [
+    { path: "/p/a.pdf", kind: "directory" },
+    { path: "/p/logo.png", kind: "file" },
+    { path: "/p/my logo\n\u017f\x01.png", kind: "file" },
+    { path: "/p/s.env", kind: "first-bytes", mime: "application/pdf" },
+    { path: null, kind: "first-bytes", mime: "application/pdf" },
+  ]);
+});
+
+test("at this log level a finding that .gitleaksignore dropped is logged with its value, and none of it is passed on", needsBinary, () => {
+  inDir((dir) => {
+    const token = githubToken("ignored");
+    writeFileSync(path.join(dir, "a.js"), `// ${token}\n`);
+    const first = scanPath(dir);
+    writeFileSync(path.join(dir, ".gitleaksignore"), `${first.findings[0].fingerprint}\n`);
+    writeFileSync(path.join(dir, "logo.png"), "x\n");
+    const r = scanPath(dir);
+    assert.deepEqual(r.findings, []);
+    assert.ok(!JSON.stringify(r).includes(token));
+  });
+});
+
+test("the server gives the count, and the paths only when asked", needsBinary, async () => {
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "secret-guard-server-")));
+  writeFileSync(path.join(dir, "logo.png"), "x\n");
+  writeFileSync(path.join(dir, "a.js"), "export const a = 1;\n");
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.join(HERE, "..", "index.mjs")],
+    env: { PATH: process.env.PATH, HOME: process.env.HOME || "", SCAN_ROOT: dir },
+    stderr: "ignore",
+  });
+  const client = new Client({ name: "unread-test", version: "1" });
+  try {
+    await client.connect(transport);
+    const plain = JSON.parse((await client.callTool({ name: "scan_path", arguments: { target: "." } })).content[0].text);
+    assert.equal(plain.clean, true);
+    assert.equal(plain.unreadCount, 1);
+    assert.equal(plain.unread, undefined);
+    const listed = JSON.parse((await client.callTool({ name: "scan_path", arguments: { target: ".", list_unread: true } })).content[0].text);
+    assert.deepEqual(listed.unread, [{ path: path.join(dir, "logo.png"), kind: "file" }]);
+    const content = await client.callTool({ name: "scan_content", arguments: { content: `MZ_REGION=maputo\n${githubToken("server")}\n` } });
+    assert.equal(content.isError, true);
+    assert.match(content.content[0].text, /^not a clean scan/);
+  } finally {
+    await client.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

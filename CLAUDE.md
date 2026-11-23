@@ -25,7 +25,7 @@ Requires `gitleaks` on `PATH` (`brew install gitleaks`).
 - `test/gitleaks.test.mjs` — 18 tests, `test/paths.test.mjs` 5 more over a real tree of files
   and symlinks, `test/default-rules.test.mjs` 7 on the default rules and on scans that did not
   run, `test/skipped.test.mjs` 11 on trees and content gitleaks did not read all of, and
-  `test/unread-paths.test.mjs` 5 on what is read by path. The gitleaks-dependent ones skip when it is
+  `test/unread-paths.test.mjs` 13 on what is read by path and what a scan says it left unread. The gitleaks-dependent ones skip when it is
   not installed:
   correct locally, and worthless in CI, where the job would be green having
   verified the normalisation helpers and nothing about detection. `.github/workflows/test.yml`
@@ -69,7 +69,7 @@ gitleaks version                # confirm the prerequisite
 - **Nor is a report on part of the tree.** gitleaks walks past what it cannot read, prints `[]`
   and exits 0: a directory or file of mode 000, a directory that can be listed and not entered.
   At its time limit it prints `[]` and exits 1. All came back `{ ok: true, findings: [] }`. It
-  says so only in its log, so the log level is `warn` and `skipped()` reads stderr: every WRN
+  says so only in its log, so `skipped()` reads stderr (the level is `debug`, for `leftUnread()`): every WRN
   and ERR line counts unless it is on the short list of lines about something else, so a
   release that words a skip differently is noticed. `settle()` then decides: nothing found and
   something skipped is an error; findings and something skipped is the findings with a
@@ -77,6 +77,13 @@ gitleaks version                # confirm the prerequisite
   "could not run". Do not pass stderr on whole: at `warn` gitleaks can quote a line of a file.
   The server's error keeps the sentence as its first block, which is the only one wolfproof
   reads, and adds the list as a second.
+- **What is unread by design has its own field, and the log level is `debug` for it, not `trace`.**
+  `leftUnread()` reads gitleaks' lines for an allowlisted directory or file and a file skipped for its
+  first bytes. A tree with those is complete. A scan whose whole target is one of them is an error
+  (`targetNotRead`), and so is a directory under a path the allowlist covers, because gitleaks tests the
+  whole path. `trace` is the only level that names an archive, and on the calibration projects it is
+  3.5 times the log with 15,595 lines holding a candidate value. `debug` holds a value only for a finding
+  a `.gitleaksignore` dropped. Never pass stderr on.
 - **EPIPE from `spawnSync` is gitleaks ending early, not a failure to run it.** `scanContent`
   writes the content to gitleaks' stdin, and a gitleaks that ends first (a config it cannot load,
   a panic on a rule's regex) leaves that write with EPIPE. The exit code, report and log are still

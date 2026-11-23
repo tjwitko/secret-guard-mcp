@@ -129,7 +129,8 @@ test("what gitleaks never tries to read is not reported as skipped", needsModes,
   try {
     t.lock("node_modules/x/app.py");
     t.lock("empty.py");
-    assert.deepEqual(scanPath(t.dir), { ok: true, findings: [] });
+    // Complete, and it says what it left unread by design: the tree it did not go into.
+    assert.deepEqual(scanPath(t.dir), { ok: true, findings: [], unread: [{ path: path.join(t.dir, "node_modules"), kind: "directory" }] });
   } finally {
     t.remove();
   }

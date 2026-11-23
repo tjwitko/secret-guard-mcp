@@ -19,6 +19,11 @@
 # secret-guard: character, so it skipped x.adll and read x.dll. It is taken out and not corrected: corrected, it
 # secret-guard: would stop reading a text file called x.dll, and a real DLL is skipped by its first bytes anyway.
 # secret-guard:
+# secret-guard: 3. Each (?i) in the path allowlist is written (?i:...), so that it ends with its own entry. gitleaks
+# secret-guard: joins the entries as (?:a|b|c) (joinRegexOr, config/utils.go), and a flag set inside a group holds to
+# secret-guard: the end of the group, across the |. So upstream's first (?i) applied to every entry after it, and
+# secret-guard: NODE_MODULES/x.js, X.GEM and Vendor/Bundle/x.rb were not read, though no entry says so.
+# secret-guard:
 # secret-guard: An extending config cannot take a default allowlist entry out (config.go appends them), hence
 # secret-guard: this copy.
 # secret-guard:
@@ -53,16 +58,16 @@ minVersion = "v8.25.0"
 description = "global allow lists"
 paths = [
     '''(?:^|/)(?:[^/]*\.)?gitleaks\.toml$''',
-    '''(?i)\.(?:bmp|gif|jpe?g|png|tiff?)$''',
-    '''(?i)\.(?:eot|[ot]tf|woff2?)$''',
-    '''(?i)\.(?:docx?|xlsx?|pdf|vsidx|suo|wsuo|pdb|exe)$''',
+    '''(?i:\.(?:bmp|gif|jpe?g|png|tiff?)$)''',
+    '''(?i:\.(?:eot|[ot]tf|woff2?)$)''',
+    '''(?i:\.(?:docx?|xlsx?|pdf|vsidx|suo|wsuo|pdb|exe)$)''',
     '''(?:^|/)vendor/modules\.txt$''',
     '''(?:^|/)vendor/(?:github\.com|golang\.org/x|google\.golang\.org|gopkg\.in|istio\.io|k8s\.io|sigs\.k8s\.io)(?:/.*)?$''',
     '''(?:^|/)node_modules(?:/.*)?$''',
     '''(?:^|/)bower_components(?:/.*)?$''',
-    '''(?i)(?:^|/)(?:v?env|virtualenv)/lib(?:64)?(?:/.*)?$''',
-    '''(?i)(?:^|/)(?:lib(?:64)?/python[23](?:\.\d{1,2})+|python/[23](?:\.\d{1,2})+/lib(?:64)?)(?:/.*)?$''',
-    '''(?i)(?:^|/)[a-z0-9_.]+-[0-9.]+\.dist-info(?:/.+)?$''',
+    '''(?i:(?:^|/)(?:v?env|virtualenv)/lib(?:64)?(?:/.*)?$)''',
+    '''(?i:(?:^|/)(?:lib(?:64)?/python[23](?:\.\d{1,2})+|python/[23](?:\.\d{1,2})+/lib(?:64)?)(?:/.*)?$)''',
+    '''(?i:(?:^|/)[a-z0-9_.]+-[0-9.]+\.dist-info(?:/.+)?$)''',
     '''(?:^|/)vendor/(?:bundle|ruby)(?:/.*?)?$''',
     '''\.gem$''',
     '''(?:^|/)\.git$''',

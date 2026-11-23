@@ -53,7 +53,11 @@ function scanError(result, extra) {
 
 // `skipped` is there only beside findings: what gitleaks did not read, with what it found in the
 // rest. With no findings a scan that skipped something is not reported at all, it is an error.
-function report(findings, extra, skipped) {
+//
+// `unreadCount` is how many paths gitleaks left unread by design. The paths themselves are there
+// only when the caller asks (`list_unread`): a tree can hold thousands of images, and this report
+// usually lands in a model's context.
+function report(findings, extra, skipped, unread, listUnread) {
   const body = {
     ...extra,
     clean: findings.length === 0,
@@ -61,6 +65,8 @@ function report(findings, extra, skipped) {
     findings,
     ...(skipped?.length ? { skipped } : {}),
     ...(findings.length ? { remediation: REMEDIATION } : {}),
+    ...(unread?.length ? { unreadCount: unread.length } : {}),
+    ...(listUnread ? { unread: unread || [] } : {}),
   };
   return { content: [{ type: "text", text: JSON.stringify(body, null, 2) }] };
 }
@@ -80,8 +86,16 @@ server.tool(
         "File or directory to scan, relative to this server's working directory or absolute " +
           "within it. Directories are scanned recursively."
       ),
+    list_unread: z
+      .boolean()
+      .optional()
+      .describe(
+        "Also return `unread`: each path the scan left unread by design (allowlisted paths, and " +
+          "files skipped for their first bytes), for a caller that blocks a write there. Archives " +
+          "are not in it; gitleaks/unread-paths.json names them."
+      ),
   },
-  async ({ target }) => {
+  async ({ target, list_unread }) => {
     let resolved;
     try {
       resolved = resolveScanPath(target, SCAN_ROOT);
@@ -92,9 +106,9 @@ server.tool(
     if (!checkGitleaksInstalled()) return notInstalled();
 
     const result = scanPath(resolved, { configPath: CONFIG_PATH });
-    if (!result.ok) return scanError(result, { target: resolved });
+    if (!result.ok) return scanError(result, { target: resolved, ...(list_unread ? { unread: result.unread || [] } : {}) });
 
-    return report(result.findings, { target: resolved }, result.skipped);
+    return report(result.findings, { target: resolved }, result.skipped, result.unread, Boolean(list_unread));
   }
 );
 
