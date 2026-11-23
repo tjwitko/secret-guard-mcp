@@ -1,23 +1,38 @@
 # secret-guard: gitleaks' default configuration at v8.30.1 (config/gitleaks.toml in gitleaks/gitleaks, MIT: see
-# secret-guard: LICENSE-gitleaks beside this file), with ONE line changed. extra-rules.toml extends this file
-# secret-guard: instead of the defaults built into the gitleaks binary.
+# secret-guard: LICENSE-gitleaks beside this file), with the changes below. extra-rules.toml extends this file
+# secret-guard: instead of the defaults built into the gitleaks binary. test/default-rules.test.mjs holds every
+# secret-guard: changed line and checks that, with them put back, this is that release's file.
 # secret-guard:
-# secret-guard: The line: the global allowlist's first regex is, upstream, (?i)^true|false|null$. By precedence
-# secret-guard: that is "starts with true, OR contains false, OR ends with null", so a finding of ANY rule whose
-# secret-guard: secret holds "false" in any letter case was dropped. Measured: 5 of 120,000 texts of a private
-# secret-guard: key's shape were not reported, each with the word somewhere in its base64, and neither was a
+# secret-guard: 1. The global allowlist's first regex is, upstream, (?i)^true|false|null$. By precedence that is
+# secret-guard: "starts with true, OR contains false, OR ends with null", so a finding of ANY rule whose secret
+# secret-guard: held "false" in any letter case was dropped. Measured: 5 of 120,000 texts of a private key's shape
+# secret-guard: were not reported, each with the word somewhere in its base64, and neither was a
 # secret-guard: connection-string password that merely starts with "True". Here the regex is anchored,
-# secret-guard: (?i)^(?:true|false|null)$, which is what it was written to mean: a "secret" that IS one of those
-# secret-guard: three words. Open upstream as gitleaks/gitleaks#2293. An extending config cannot take a default
-# secret-guard: allowlist entry out (config.go appends them), hence this copy.
+# secret-guard: (?i)^(?:true|false|null)$, which is what it was written to mean. Open upstream as
+# secret-guard: gitleaks/gitleaks#2293.
+# secret-guard:
+# secret-guard: 2. The global path allowlist no longer hides text a person writes or a tool generates: lockfiles,
+# secret-guard: go.mod, go.sum, go.work, .svg, the gradle and maven wrappers, any .js named for a library,
+# secret-guard: javascript.json, verification-metadata.xml, .refactorlog, .gltf, .socket, .bin and .v2. What stays
+# secret-guard: is third-party trees, binary formats and rule files, and gitleaks/unread-paths.json lists it.
+# secret-guard: gitleaks\.toml matched anywhere in a path and is anchored. ".dll" had a dot that matched any
+# secret-guard: character, so it skipped x.adll and read x.dll. It is taken out and not corrected: corrected, it
+# secret-guard: would stop reading a text file called x.dll, and a real DLL is skipped by its first bytes anyway.
+# secret-guard:
+# secret-guard: 3. Each (?i) in the path allowlist is written (?i:...), so that it ends with its own entry. gitleaks
+# secret-guard: joins the entries as (?:a|b|c) (joinRegexOr, config/utils.go), and a flag set inside a group holds to
+# secret-guard: the end of the group, across the |. So upstream's first (?i) applied to every entry after it, and
+# secret-guard: NODE_MODULES/x.js, X.GEM and Vendor/Bundle/x.rb were not read, though no entry says so.
+# secret-guard:
+# secret-guard: An extending config cannot take a default allowlist entry out (config.go appends them), hence
+# secret-guard: this copy.
 # secret-guard:
 # secret-guard: To move to a newer gitleaks: replace everything below these lines with that release's
-# secret-guard: config/gitleaks.toml, re-apply the one change if it is still needed, and update the version and
-# secret-guard: the checksum in test/default-rules.test.mjs, which checks that this file is that release's file,
-# secret-guard: changed in that line and nowhere else.
+# secret-guard: config/gitleaks.toml, re-apply the changes that are still needed, and update the version, the
+# secret-guard: checksum and the list of changes in test/default-rules.test.mjs.
 # secret-guard:
-# secret-guard: Named *.gitleaks.toml on purpose: this file's own allowlist skips paths matching gitleaks\.toml,
-# secret-guard: because a rule file holds the patterns it looks for.
+# secret-guard: Named *.gitleaks.toml on purpose: this file's own allowlist skips that name, because a rule file
+# secret-guard: holds the patterns it looks for.
 # This file has been auto-generated. Do not edit manually.
 # If you would like to contribute new rules, please use
 # cmd/generate/config/main.go and follow the contributing guidelines
@@ -42,30 +57,19 @@ minVersion = "v8.25.0"
 [allowlist]
 description = "global allow lists"
 paths = [
-    '''gitleaks\.toml''',
-    '''(?i)\.(?:bmp|gif|jpe?g|png|svg|tiff?)$''',
-    '''(?i)\.(?:eot|[ot]tf|woff2?)$''',
-    '''(?i)\.(?:docx?|xlsx?|pdf|bin|socket|vsidx|v2|suo|wsuo|.dll|pdb|exe|gltf)$''',
-    '''go\.(?:mod|sum|work(?:\.sum)?)$''',
+    '''(?:^|/)(?:[^/]*\.)?gitleaks\.toml$''',
+    '''(?i:\.(?:bmp|gif|jpe?g|png|tiff?)$)''',
+    '''(?i:\.(?:eot|[ot]tf|woff2?)$)''',
+    '''(?i:\.(?:docx?|xlsx?|pdf|vsidx|suo|wsuo|pdb|exe)$)''',
     '''(?:^|/)vendor/modules\.txt$''',
     '''(?:^|/)vendor/(?:github\.com|golang\.org/x|google\.golang\.org|gopkg\.in|istio\.io|k8s\.io|sigs\.k8s\.io)(?:/.*)?$''',
-    '''(?:^|/)gradlew(?:\.bat)?$''',
-    '''(?:^|/)gradle\.lockfile$''',
-    '''(?:^|/)mvnw(?:\.cmd)?$''',
-    '''(?:^|/)\.mvn/wrapper/MavenWrapperDownloader\.java$''',
     '''(?:^|/)node_modules(?:/.*)?$''',
-    '''(?:^|/)(?:deno\.lock|npm-shrinkwrap\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$''',
     '''(?:^|/)bower_components(?:/.*)?$''',
-    '''(?:^|/)(?:angular|bootstrap|jquery(?:-?ui)?|plotly|swagger-?ui)[a-zA-Z0-9.-]*(?:\.min)?\.js(?:\.map)?$''',
-    '''(?:^|/)javascript\.json$''',
-    '''(?:^|/)(?:Pipfile|poetry)\.lock$''',
-    '''(?i)(?:^|/)(?:v?env|virtualenv)/lib(?:64)?(?:/.*)?$''',
-    '''(?i)(?:^|/)(?:lib(?:64)?/python[23](?:\.\d{1,2})+|python/[23](?:\.\d{1,2})+/lib(?:64)?)(?:/.*)?$''',
-    '''(?i)(?:^|/)[a-z0-9_.]+-[0-9.]+\.dist-info(?:/.+)?$''',
+    '''(?i:(?:^|/)(?:v?env|virtualenv)/lib(?:64)?(?:/.*)?$)''',
+    '''(?i:(?:^|/)(?:lib(?:64)?/python[23](?:\.\d{1,2})+|python/[23](?:\.\d{1,2})+/lib(?:64)?)(?:/.*)?$)''',
+    '''(?i:(?:^|/)[a-z0-9_.]+-[0-9.]+\.dist-info(?:/.+)?$)''',
     '''(?:^|/)vendor/(?:bundle|ruby)(?:/.*?)?$''',
     '''\.gem$''',
-    '''verification-metadata\.xml''',
-    '''Database.refactorlog''',
     '''(?:^|/)\.git$''',
 ]
 regexes = [

@@ -53,7 +53,11 @@ function scanError(result, extra) {
 
 // `skipped` is there only beside findings: what gitleaks did not read, with what it found in the
 // rest. With no findings a scan that skipped something is not reported at all, it is an error.
-function report(findings, extra, skipped) {
+//
+// `unreadCount` is how many paths gitleaks left unread by design. `unread` is there only for the
+// paths the caller asked about (`unread_of`): a tree can hold hundreds of thousands of images, this
+// report usually lands in a model's context, and an MCP client reads 10 MB in one message.
+function report(findings, extra, skipped, { unreadCount, unread } = {}) {
   const body = {
     ...extra,
     clean: findings.length === 0,
@@ -61,6 +65,8 @@ function report(findings, extra, skipped) {
     findings,
     ...(skipped?.length ? { skipped } : {}),
     ...(findings.length ? { remediation: REMEDIATION } : {}),
+    ...(unreadCount ? { unreadCount } : {}),
+    ...(unread ? { unread } : {}),
   };
   return { content: [{ type: "text", text: JSON.stringify(body, null, 2) }] };
 }
@@ -80,8 +86,17 @@ server.tool(
         "File or directory to scan, relative to this server's working directory or absolute " +
           "within it. Directories are scanned recursively."
       ),
+    unread_of: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "Paths under the target, for a caller that blocks a write where the scan does not look. " +
+          "The report's `unread` then says which of them the scan left unread by design (the path " +
+          "allowlist, and files skipped for their first bytes). Archives are not in it; " +
+          "gitleaks/unread-paths.json names them."
+      ),
   },
-  async ({ target }) => {
+  async ({ target, unread_of }) => {
     let resolved;
     try {
       resolved = resolveScanPath(target, SCAN_ROOT);
@@ -91,10 +106,10 @@ server.tool(
 
     if (!checkGitleaksInstalled()) return notInstalled();
 
-    const result = scanPath(resolved, { configPath: CONFIG_PATH });
-    if (!result.ok) return scanError(result, { target: resolved });
+    const result = scanPath(resolved, { configPath: CONFIG_PATH, unreadOf: unread_of });
+    if (!result.ok) return scanError(result, { target: resolved, ...(result.unread ? { unread: result.unread } : {}) });
 
-    return report(result.findings, { target: resolved }, result.skipped);
+    return report(result.findings, { target: resolved }, result.skipped, result);
   }
 );
 

@@ -1,0 +1,154 @@
+{
+  "schema": 1,
+  "gitleaks": "8.30.1",
+  "about": "What secret-guard's scan does not read, by path, for a caller that needs to know. Each pattern is a JavaScript regular expression, tested against a path with / as its separator, relative to the scanned directory. To test a path: it is unread if any entry matches the whole path, or if an entry with \"directories\": true matches one of its parent directories, written without a trailing slash (for a/b/c.js: a, then a/b). gitleaks tests each directory as it walks and does not go into one that matches, so logo.png/config.js is unread. The archive entry has \"directories\": false: gitleaks goes by a file's own name there, and x.gz/inner.js is read. An entry from a config file is that file's pattern; (?i:...) there is flags \"iu\" here, because Go's case folding takes U+017F as s and U+212A as k, and JavaScript's does only with the u flag. The archive entry is in no config: gitleaks skips a file by its name alone when the name holds one of these endings, comparing after Go's ToLower, which is flags \"i\" and the U+0130 in the pattern (test/unread-paths.test.mjs holds it to what the binary does). Not on this list, because no name says it: a file whose first bytes are those of a binary format, whatever it is called. Two ordinary letters are enough: text beginning MZ is skipped.",
+  "entries": [
+    {
+      "kind": "rule-file",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)(?:[^/]*\\.)?gitleaks\\.toml$",
+      "flags": "",
+      "directories": true
+    },
+    {
+      "kind": "image",
+      "from": "default.gitleaks.toml",
+      "pattern": "\\.(?:bmp|gif|jpe?g|png|tiff?)$",
+      "flags": "iu",
+      "directories": true
+    },
+    {
+      "kind": "font",
+      "from": "default.gitleaks.toml",
+      "pattern": "\\.(?:eot|[ot]tf|woff2?)$",
+      "flags": "iu",
+      "directories": true
+    },
+    {
+      "kind": "binary",
+      "from": "default.gitleaks.toml",
+      "pattern": "\\.(?:docx?|xlsx?|pdf|vsidx|suo|wsuo|pdb|exe)$",
+      "flags": "iu",
+      "directories": true
+    },
+    {
+      "kind": "go-vendor-list",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)vendor/modules\\.txt$",
+      "flags": "",
+      "directories": true
+    },
+    {
+      "kind": "go-vendor",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)vendor/(?:github\\.com|golang\\.org/x|google\\.golang\\.org|gopkg\\.in|istio\\.io|k8s\\.io|sigs\\.k8s\\.io)(?:/.*)?$",
+      "flags": "",
+      "directories": true
+    },
+    {
+      "kind": "node-modules",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)node_modules(?:/.*)?$",
+      "flags": "",
+      "directories": true
+    },
+    {
+      "kind": "bower-components",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)bower_components(?:/.*)?$",
+      "flags": "",
+      "directories": true
+    },
+    {
+      "kind": "virtualenv",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)(?:v?env|virtualenv)/lib(?:64)?(?:/.*)?$",
+      "flags": "iu",
+      "directories": true
+    },
+    {
+      "kind": "python-lib",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)(?:lib(?:64)?/python[23](?:\\.\\d{1,2})+|python/[23](?:\\.\\d{1,2})+/lib(?:64)?)(?:/.*)?$",
+      "flags": "iu",
+      "directories": true
+    },
+    {
+      "kind": "dist-info",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)[a-z0-9_.]+-[0-9.]+\\.dist-info(?:/.+)?$",
+      "flags": "iu",
+      "directories": true
+    },
+    {
+      "kind": "ruby-vendor",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)vendor/(?:bundle|ruby)(?:/.*?)?$",
+      "flags": "",
+      "directories": true
+    },
+    {
+      "kind": "gem",
+      "from": "default.gitleaks.toml",
+      "pattern": "\\.gem$",
+      "flags": "",
+      "directories": true
+    },
+    {
+      "kind": "git",
+      "from": "default.gitleaks.toml",
+      "pattern": "(?:^|/)\\.git$",
+      "flags": "",
+      "directories": true
+    },
+    {
+      "kind": "terraform",
+      "from": "extra-rules.toml",
+      "pattern": "(^|/)\\.terraform/",
+      "flags": "",
+      "directories": true
+    },
+    {
+      "kind": "external-modules",
+      "from": "extra-rules.toml",
+      "pattern": "(^|/)\\.external_modules/",
+      "flags": "",
+      "directories": true
+    },
+    {
+      "kind": "node-modules-dir",
+      "from": "extra-rules.toml",
+      "pattern": "(^|/)node_modules/",
+      "flags": "",
+      "directories": true
+    },
+    {
+      "kind": "vendor",
+      "from": "extra-rules.toml",
+      "pattern": "(^|/)vendor/",
+      "flags": "",
+      "directories": true
+    },
+    {
+      "kind": "venv",
+      "from": "extra-rules.toml",
+      "pattern": "(^|/)\\.venv/",
+      "flags": "",
+      "directories": true
+    },
+    {
+      "kind": "pycache",
+      "from": "extra-rules.toml",
+      "pattern": "(^|/)__pycache__/",
+      "flags": "",
+      "directories": true
+    },
+    {
+      "kind": "archive",
+      "from": "gitleaks' archive detection",
+      "pattern": "(?:^|/)[^/]*\\.(?:(?:7z|br|bz2|gz|lz4|rar|s2|sz|tar|xz|z[i\\u0130]p|zst|zz)[^/]*|lz|mz)$",
+      "flags": "i",
+      "directories": false
+    }
+  ]
+}

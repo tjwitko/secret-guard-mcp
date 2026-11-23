@@ -114,17 +114,69 @@ const UPSTREAM = {
   ours: "    '''(?i)^(?:true|false|null)$''',",
 };
 
-test("the default rules are gitleaks' own at one release, changed in one line and nowhere else", () => {
+// Every entry of upstream's global path allowlist, in its order, and what became of it: the same
+// string for one kept as it is, another for one corrected, null for one taken out, so that the file
+// is read. Nothing else in the file differs, which the checksum below holds.
+//
+// Every (?i) is written (?i:...) here. gitleaks joins the entries as (?:a|b|c), where a flag holds to
+// the end of the group: upstream's first (?i) applied to every entry after it.
+const UPSTREAM_PATHS = [
+  // Matched anywhere in a path, so app.gitleaks.toml.py was not read. A rule file holds its patterns.
+  [String.raw`gitleaks\.toml`, String.raw`(?:^|/)(?:[^/]*\.)?gitleaks\.toml$`],
+  // .svg is text, and can carry a comment.
+  [String.raw`(?i)\.(?:bmp|gif|jpe?g|png|svg|tiff?)$`, String.raw`(?i:\.(?:bmp|gif|jpe?g|png|tiff?)$)`],
+  [String.raw`(?i)\.(?:eot|[ot]tf|woff2?)$`, String.raw`(?i:\.(?:eot|[ot]tf|woff2?)$)`],
+  // .socket is a systemd unit and .gltf is JSON. .bin and .v2 are any file with that ending. ".dll"
+  // had a dot that matches any character, so x.adll was skipped and x.dll was read. Taken out, not
+  // corrected: corrected, a text file called x.dll stops being read. A real DLL is skipped by its
+  // first bytes.
+  [String.raw`(?i)\.(?:docx?|xlsx?|pdf|bin|socket|vsidx|v2|suo|wsuo|.dll|pdb|exe|gltf)$`, String.raw`(?i:\.(?:docx?|xlsx?|pdf|vsidx|suo|wsuo|pdb|exe)$)`],
+  // Text. go.sum keeps one narrow rule of its own, in extra-rules.toml. No left anchor: mango.sum.
+  [String.raw`go\.(?:mod|sum|work(?:\.sum)?)$`, null],
+  [String.raw`(?:^|/)vendor/modules\.txt$`, "same"],
+  [String.raw`(?:^|/)vendor/(?:github\.com|golang\.org/x|google\.golang\.org|gopkg\.in|istio\.io|k8s\.io|sigs\.k8s\.io)(?:/.*)?$`, "same"],
+  [String.raw`(?:^|/)gradlew(?:\.bat)?$`, null],
+  [String.raw`(?:^|/)gradle\.lockfile$`, null],
+  [String.raw`(?:^|/)mvnw(?:\.cmd)?$`, null],
+  [String.raw`(?:^|/)\.mvn/wrapper/MavenWrapperDownloader\.java$`, null],
+  [String.raw`(?:^|/)node_modules(?:/.*)?$`, "same"],
+  [String.raw`(?:^|/)(?:deno\.lock|npm-shrinkwrap\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$`, null],
+  [String.raw`(?:^|/)bower_components(?:/.*)?$`, "same"],
+  // bootstrap.js is also what a project calls the file that starts it.
+  [String.raw`(?:^|/)(?:angular|bootstrap|jquery(?:-?ui)?|plotly|swagger-?ui)[a-zA-Z0-9.-]*(?:\.min)?\.js(?:\.map)?$`, null],
+  [String.raw`(?:^|/)javascript\.json$`, null],
+  [String.raw`(?:^|/)(?:Pipfile|poetry)\.lock$`, null],
+  [String.raw`(?i)(?:^|/)(?:v?env|virtualenv)/lib(?:64)?(?:/.*)?$`, String.raw`(?i:(?:^|/)(?:v?env|virtualenv)/lib(?:64)?(?:/.*)?$)`],
+  [String.raw`(?i)(?:^|/)(?:lib(?:64)?/python[23](?:\.\d{1,2})+|python/[23](?:\.\d{1,2})+/lib(?:64)?)(?:/.*)?$`, String.raw`(?i:(?:^|/)(?:lib(?:64)?/python[23](?:\.\d{1,2})+|python/[23](?:\.\d{1,2})+/lib(?:64)?)(?:/.*)?$)`],
+  [String.raw`(?i)(?:^|/)[a-z0-9_.]+-[0-9.]+\.dist-info(?:/.+)?$`, String.raw`(?i:(?:^|/)[a-z0-9_.]+-[0-9.]+\.dist-info(?:/.+)?$)`],
+  [String.raw`(?:^|/)vendor/(?:bundle|ruby)(?:/.*?)?$`, "same"],
+  [String.raw`\.gem$`, "same"],
+  [String.raw`verification-metadata\.xml`, null],
+  [String.raw`Database.refactorlog`, null],
+  [String.raw`(?:^|/)\.git$`, "same"],
+];
+const pathLine = (p) => `    '''${p}''',`;
+
+test("the default rules are gitleaks' own at one release, with the listed changes and no others", () => {
   const lines = readFileSync(DEFAULTS, "utf8").split("\n");
   const body = lines.slice(lines.findIndex((l) => !l.startsWith("# secret-guard:")));
+
   const changed = body.flatMap((l, i) => (l === UPSTREAM.ours ? [i] : []));
   assert.equal(changed.length, 1, "the anchored regex is there once");
   assert.ok(!body.includes(UPSTREAM.line), "and upstream's form of it is not");
   body[changed[0]] = UPSTREAM.line;
+
+  assert.equal(UPSTREAM_PATHS.length, 25, "upstream's list has 25 entries");
+  const start = body.indexOf("paths = [", body.indexOf("[allowlist]")) + 1;
+  const end = body.indexOf("]", start);
+  const ours = UPSTREAM_PATHS.flatMap(([up, now]) => (now === null ? [] : [pathLine(now === "same" ? up : now)]));
+  assert.deepEqual(body.slice(start, end), ours, "the path allowlist is the table above");
+  body.splice(start, end - start, ...UPSTREAM_PATHS.map(([up]) => pathLine(up)));
+
   assert.equal(
     createHash("sha256").update(body.join("\n")).digest("hex"),
     UPSTREAM.sha256,
-    `with that line put back, gitleaks/default.gitleaks.toml is not gitleaks ${UPSTREAM.version}'s config/gitleaks.toml`
+    `with the listed changes undone, gitleaks/default.gitleaks.toml is not gitleaks ${UPSTREAM.version}'s config/gitleaks.toml`
   );
 });
 

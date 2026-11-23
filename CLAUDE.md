@@ -15,14 +15,20 @@ Requires `gitleaks` on `PATH` (`brew install gitleaks`).
 
 - `index.mjs` — env sanitization, the two tools
 - `lib/gitleaks.mjs` — spawn wrappers, `normalizeFindings()` (the redaction layer), `REMEDIATION`
+- `lib/gitleaks-log.mjs`, `lib/gitleaks-run.mjs` — reading gitleaks' log line by line, and the process
+  that does it for a tree
 - `lib/paths.mjs` — `resolveScanPath()`, `SCAN_ROOT` containment
 - `gitleaks/extra-rules.toml` — `[extend] path = "default.gitleaks.toml"` plus the connection-string rule
 - `gitleaks/default.gitleaks.toml` — gitleaks 8.30.1's default config with one allowlist regex
-  anchored; its top says which, why, and how to take a newer release's
+  anchored and a shorter path allowlist; its top says what, why, and how to take a newer release's
+- `gitleaks/unread-paths.json` — what the scan does not read by path, as JavaScript regular
+  expressions, for a caller that must know. `test/unread-paths.test.mjs` holds it to the config files
+  and to the binary. Change a path entry and this file together
 - `test/gitleaks.test.mjs` — 18 tests, `test/paths.test.mjs` 5 more over a real tree of files
   and symlinks, `test/default-rules.test.mjs` 7 on the default rules and on scans that did not
-  run, and `test/skipped.test.mjs` 11 on trees and content gitleaks did not read all of. The
-  gitleaks-dependent ones skip when it is not installed, which is 27 of the 41:
+  run, `test/skipped.test.mjs` 11 on trees and content gitleaks did not read all of, and
+  `test/unread-paths.test.mjs` 15 on what is read by path and what a scan says it left unread. The gitleaks-dependent ones skip when it is
+  not installed:
   correct locally, and worthless in CI, where the job would be green having
   verified the normalisation helpers and nothing about detection. `.github/workflows/test.yml`
   installs a pinned gitleaks and fails the job if any test was skipped at all.
@@ -48,7 +54,7 @@ gitleaks version                # confirm the prerequisite
   `default.gitleaks.toml` is upstream's file with that regex anchored. Upstream:
   gitleaks/gitleaks#2293. Two consequences. Rules no longer arrive with a gitleaks upgrade:
   re-vendor as the top of the file describes, and `test/default-rules.test.mjs` fails when the
-  binary and the copy have parted or the copy differs from upstream in anything else. And the
+  binary and the copy have parted or the copy differs from upstream in anything it does not list. And the
   file is named `*.gitleaks.toml` because its own allowlist skips that path; under another name
   gitleaks flags one of its rule regexes in it.
 - **gitleaks is started in the config's directory.** It reads `[extend] path` relative to where
@@ -65,7 +71,7 @@ gitleaks version                # confirm the prerequisite
 - **Nor is a report on part of the tree.** gitleaks walks past what it cannot read, prints `[]`
   and exits 0: a directory or file of mode 000, a directory that can be listed and not entered.
   At its time limit it prints `[]` and exits 1. All came back `{ ok: true, findings: [] }`. It
-  says so only in its log, so the log level is `warn` and `skipped()` reads stderr: every WRN
+  says so only in its log, so `skipped()` reads stderr (the level is `debug`, for `leftUnread()`): every WRN
   and ERR line counts unless it is on the short list of lines about something else, so a
   release that words a skip differently is noticed. `settle()` then decides: nothing found and
   something skipped is an error; findings and something skipped is the findings with a
@@ -73,6 +79,21 @@ gitleaks version                # confirm the prerequisite
   "could not run". Do not pass stderr on whole: at `warn` gitleaks can quote a line of a file.
   The server's error keeps the sentence as its first block, which is the only one wolfproof
   reads, and adds the list as a second.
+- **What is unread by design has its own field, and the log level is `debug` for it, not `trace`.**
+  `leftUnread()` reads gitleaks' lines for an allowlisted directory or file and a file skipped for its
+  first bytes. A tree with those is complete. A scan whose whole target is one of them is an error
+  (`targetNotRead`), and so is a directory under a path the allowlist covers, because gitleaks tests the
+  whole path. `trace` is the only level that names an archive, and on the calibration projects it is
+  3.5 times the log with 15,595 lines holding a candidate value. `debug` holds a value only for a finding
+  a `.gitleaksignore` dropped. Never pass stderr on.
+- **A tree's log is read as a stream, in a process of its own (`lib/gitleaks-run.mjs`).** `spawnSync` holds
+  a child's whole output, and at `debug` that grows with the tree: 330,000 small `.png` files were
+  ENOBUFS, from a tree v1.0.4 called clean. `scanPath` is synchronous, so it starts that process, which
+  keeps only warnings, errors, a count of what was left unread, and the entries for the paths a caller
+  named (`unread_of`). Not a list of the whole tree: at 122 MB it closed the MCP SDK client, which reads
+  10 MB in one message. `LIMITS` in `lib/gitleaks-log.mjs` holds what stays bounded, and reaching one is an error
+  that names it. No temporary file for the log: a debug line can hold a value, and a full disk would
+  lose lines silently.
 - **EPIPE from `spawnSync` is gitleaks ending early, not a failure to run it.** `scanContent`
   writes the content to gitleaks' stdin, and a gitleaks that ends first (a config it cannot load,
   a panic on a rule's regex) leaves that write with EPIPE. The exit code, report and log are still
